@@ -14,8 +14,11 @@ import pandas as pd
 import mylib_dataset as md
 import mylib_normalize as mn
 import mylib_TA as mta
+import mylib_blockchain as mb
 import talib 
 import datetime
+import calendar
+import pickle
 
 
 #########
@@ -85,46 +88,162 @@ def create_dataset_ternary_labels_percentages(dataset, descriptors_len, percenta
     return np.array(dataX), np.array(dataY)
 
 #use unprocessed close values for Y
-def create_dataset_labels_mean_percentages(dataset, dataset_unprocessed, window_length, train_data_flag):
+#def create_dataset_labels_mean_percentages(dataset, dataset_unprocessed, window_length, train_data_flag):
+#    dataX, dataY = [], []
+#    mean_lows = []
+#    mean_highs = []
+#    data_open  = dataset_unprocessed[:,0]
+#    data_high = dataset_unprocessed[:,2]
+#    data_low  = dataset_unprocessed[:,3]
+#    
+#        ### Condition:
+#    ## if any 'low' or 'high' price of the next batch is bigger
+#    ## than 'percentage'% of the last closing price of the batch 
+#    for i in range(len(data_open) - window_length):
+#        dataX.append(dataset[i,:])
+#        
+##        close = dataset[i + look_back][1]
+#        mean_high = np.mean(data_high[i:(i + window_length)])
+#        mean_low =  np.mean(data_low[i:(i + window_length)])
+#        
+#        dataY.append( [((mean_high - data_open[i]) / data_open[i]), ((data_open[i] - mean_low)/ data_open[i])] )
+#        mean_highs.append(mean_high)
+#        mean_lows.append(mean_low)
+#    if(train_data_flag):
+#        for i in range(window_length):
+#            dataX.append(dataset[i,:])
+#            dataY.append((0,0))
+#    return np.array(dataX), np.array(dataY), mean_highs, mean_lows
+
+#def create_dataset_labels_mean_percentages(data, data_unprocessed, window_length):
+#    dataX, dataY = [], []
+#    mean_lows = []
+#    mean_highs = []
+#    data_open  = data_unprocessed[:,0]
+#    data_high = data_unprocessed[:,2]
+#    data_low  = data_unprocessed[:,3]
+#    
+#        ### Condition:
+#    ## if any 'low' or 'high' price of the next batch is bigger
+#    ## than 'percentage'% of the last closing price of the batch    
+#    
+#    for i in range(len(data_open) - window_length):
+#        dataX.append(data[i,:])
+#        
+##        close = dataset[i + look_back][1]
+#        mean_high = np.mean(data_high[i:(i + window_length)])
+#        mean_low =  np.mean(data_low[i:(i + window_length)])
+#        
+#        dataY.append( [((mean_high - data_open[i]) / data_open[i]), ((data_open[i] - mean_low)/ data_open[i])] )
+#        mean_highs.append(mean_high)
+#        mean_lows.append(mean_low)
+#    return np.array(dataX), np.array(dataY), mean_highs, mean_lows
+
+def get_labels_mean_window(data_in, data, window_length, label_type = '', thresh_ratio = 1.2):
+    #in_data = data['dataset_dict']['close']
     dataX, dataY = [], []
     mean_lows = []
     mean_highs = []
-    data_open  = dataset_unprocessed[:,0]
-    data_high = dataset_unprocessed[:,2]
-    data_low  = dataset_unprocessed[:,3]
+    
+    for i in range(len(data) - window_length):
+        dataX.append(data_in[i,:])
+        up = [data[i+j] if data[i+j] >= data[i] else 0 for j in range(1,window_length+1)]
+        down = [data[i+j] if data[i+j] < data[i] else 0 for j in range(1,window_length+1)]
+        mean_up = np.mean(up)
+        mean_down = np.mean(down)
+        if(label_type):
+            if(label_type == 'bool_up'):
+                dataY.append(str(mean_up > mean_down * thresh_ratio))
+            elif(label_type == 'bool_down'):
+                dataY.append(str(mean_up * thresh_ratio < mean_down))
+            elif(label_type == 'ternary'):
+                if(mean_up > mean_down * thresh_ratio):
+                    dataY.append('bull')
+                elif (mean_up * thresh_ratio < mean_down):
+                    dataY.append('bear')
+                else:
+                    dataY.append('crab')
+            else:
+                print('Unknown label type: ', label_type)
+        else:
+            dataY.append( (mean_up, mean_down))
+        mean_highs.append(mean_up)
+        mean_lows.append(mean_down)
+    return np.array(dataX), np.array(dataY), mean_highs, mean_lows
+
+
+
+def create_dataset_labels_mean_percentages_bool(data, data_unprocessed, window_length):
+    dataX = []
+    mean_lows = []
+    mean_highs = []
+    Y_labels = []
+    data_open  = data_unprocessed[:,0]
+    data_high = data_unprocessed[:,2]
+    data_low  = data_unprocessed[:,3]
     
         ### Condition:
     ## if any 'low' or 'high' price of the next batch is bigger
-    ## than 'percentage'% of the last closing price of the batch 
+    ## than 'percentage'% of the last closing price of the batch    
+    
     for i in range(len(data_open) - window_length):
-        dataX.append(dataset[i,:])
+        dataX.append(data[i,:])
         
 #        close = dataset[i + look_back][1]
         mean_high = np.mean(data_high[i:(i + window_length)])
         mean_low =  np.mean(data_low[i:(i + window_length)])
         
-        dataY.append( [((mean_high - data_open[i]) / data_open[i]), ((data_open[i] - mean_low)/ data_open[i])] )
+        #a = [((mean_high - data_open[i]) / data_open[i]), ((data_open[i] - mean_low)/ data_open[i])] 
+        #Y_labels.append(str(mean_high > mean_low*2))
+#        Y_labels.append(str(data_open[i + window_length] > data_open[i]))
+        Y_labels.append(data_open[i + window_length])
         mean_highs.append(mean_high)
         mean_lows.append(mean_low)
-    if(train_data_flag):
-        for i in range(window_length):
-            dataX.append(dataset[i,:])
-            dataY.append((0,0))
-    return np.array(dataX), np.array(dataY), mean_highs, mean_lows
+    return np.array(dataX), Y_labels, mean_highs, mean_lows
+
 
 def get_date_from_UTC_ms(UTC_time):
     #UTC_time = data['dataset_dict']['UTC'][0]
-    ceva = datetime.datetime.utcfromtimestamp(UTC_time/1000)       
-    date = ceva.isoformat()[:ceva.isoformat().find('T')]
+    date_dict = {}
+    date_datetime = datetime.datetime.utcfromtimestamp(UTC_time/1000)       
+    date = date_datetime.isoformat()[:date_datetime.isoformat().find('T')]
+    date_dict['date_str'] = date
+    date_dict['date_datetime'] = date_datetime
     print('UTC time:' + str(UTC_time) + ' --- date: ' + date)
-    return date
+    return date_dict
+
+
+def datetime_local_to_gmt_UTC(dt):
+    return calendar.timegm(dt.utctimetuple())
+
+
+def get_datetime_from_string(date_string):
+    year = date_string[:date_string.find('-')]
+    month = date_string[date_string.find('-'):][:date_string.find('-')].replace('-','')
+    day = date_string[date_string.find('-'):][date_string.find('-'):][:date_string.find('-')]
+    return datetime.datetime(int(year),int(month), int(day))
+
+def get_data_interval(data_UTC, start_date, end_date):
+    start_UTC_ms = datetime_local_to_gmt_UTC(start_date) * 1000
+    end_UTC_ms = datetime_local_to_gmt_UTC(end_date) * 1000
+    start_index = 0
+    end_index = 0
+    for i in range(len(data_UTC)):
+        if(data_UTC[i] == start_UTC_ms):
+            start_index = i
+        if(data_UTC[i] == end_UTC_ms):
+            end_index = i
+            break
+    print('start_UTC_ms: ', start_UTC_ms, ' end_UTC_ms: ', end_UTC_ms) 
+    print('start index: ', start_index, ' end_index: ', end_index) 
+    return {'start':start_index,'end':end_index}
 
 def get_split(data,chunks):
     if not chunks: return np.array(data)
     try:
        data = np.split(data,chunks)
     except:
-       data = data[(len(data) - int(len(data)/chunks)*chunks):]
+       data = data[:-(len(data) - int(len(data)/chunks)*chunks)]
        data = np.split(data,chunks)
     return np.array(data)
 
@@ -189,19 +308,19 @@ def slope_split_points(X, slope_window = 2, lam_att = 0.5, slope_diff = 0.051, c
                     break
     return split_points
 
-def bin_class_perf_indicators(results, reference):
+def bin_class_perf_indicators(results, reference, label_pos, label_neg):
     true_positive = true_negative = false_positive = false_negative = 0
     dict_indicators = {}
     
     ## confusion matrix
     for i in range (len(results)):
-        if(results[i] == 1):
+        if(results[i] == label_pos):
             if(results[i] == reference[i]):
                 true_positive += 1
             else:
                 false_positive += 1
                 
-        if(results[i] == 0):
+        if(results[i] == label_neg):
             if(results[i] == reference[i]):
                 true_negative += 1 
             else:
@@ -246,15 +365,18 @@ def bin_class_perf_indicators(results, reference):
 def print_dictionary(dictionary):
     for i in dictionary:
         print(i, ':', dictionary[i])
+            
 
-
-def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
+def get_dataset_with_descriptors(skip_preprocessing,
                                   preproc_constant, 
                                   normalization_method,
                                   dataset_directory, 
-                                  hard_coded_file_number,
                                   feature_names,
-                                  lookback = 0):
+                                  datetime_interval,
+                                  blockchain_indicators,
+                                  lookback = 0,
+                                  input_noise_debug = False,
+                                  dataset_type = 'dataset1'):
     #########
     #mtaS 	int 	millisecond time stamp
     #OPEN 	float 	First execution during the time frame
@@ -264,13 +386,10 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
     #VOLUME 	float 	Quantity of symbol traded within the timeframe
     #########
 
-    dictionary = ['UTC', 'open', 'close', 'high', 'low', 'volume']
-    if(hard_coded_file_number):
-        x = hard_coded_file_number
-    else:      
-        os.chdir(dataset_directory)
-        x = subprocess.check_output(' ls | wc -l',shell = 'True')
-        x = int(md.parser(str(x)))
+    dictionary = ['UTC', 'open', 'close', 'high', 'low', 'volume']    
+    os.chdir(dataset_directory)
+    x = subprocess.check_output(' ls | wc -l',shell = 'True')
+    x = int(md.parser(str(x)))
         
     if(x == 0):
         print('No files found!')
@@ -279,56 +398,84 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
     
     for index_proc in ['preprocessed','nonprocessed']:
         
-        if index_proc == 'preprocessed' and not concatenate_datasets_preproc_flag:
+        if index_proc == 'preprocessed' and skip_preprocessing:
             print("Skipping preprocess..")
             continue   
         
-        for ii in range (0,x):## minus readme file
-            try:
-                dataset[ii] = pd.read_csv(dataset_directory + '/klines_15min_' +str(ii) +'.csv')
-                dataset[ii] = dataset[ii].values
-            except:
-                #print(ii)
-                dataset[ii] = np.zeros([246, 6])
-            if ii == 0:
-                 whole_dataset = dataset[ii]
-            else:
-                 whole_dataset = np.concatenate( [ whole_dataset, dataset[ii] ] )
-        ############# fill missing
-        
-        ## remove zore values from the start.. these are caused by the listing time of the pairing.
-        print('len dataset ' + str(len(whole_dataset)))
-        for i in range(len(whole_dataset)):
-            if(whole_dataset[i][1] > 0):
-                print('debug '+ str(i) + ' data: ' + str(whole_dataset[i][0]))
-                whole_dataset = whole_dataset[i:,:] 
-                break
-        print('len dataset2 ' + str(len(whole_dataset)))    
-                
+        if(dataset_type == 'dataset1'):
+            for ii in range (0,x):## minus readme file
+                try:
+                    dataset[ii] = pd.read_csv(dataset_directory + '/klines_15min_' +str(ii) +'.csv')
+                    dataset[ii] = dataset[ii].values
+                    dataset[ii] = np.array(sorted(dataset[ii], key=lambda x: x[0])) ## fix for csv UTC time in descending order
+                except:
+                    print('could not read: ',ii)
+                    dataset[ii] = np.zeros([246, 6])
+                if ii == 0:
+                     whole_dataset = dataset[ii]
+                else:
+                     whole_dataset = np.concatenate( [ whole_dataset, dataset[ii] ] )
+            ############# fill missing
+            
+            ## remove zore values from the start.. these are caused by the listing time of the pairing.
+            print('len dataset ' + str(len(whole_dataset)))
+            for i in range(len(whole_dataset)):
+                if(whole_dataset[i][1] > 0):
+                    print('debug '+ str(i) + ' data: ' + str(whole_dataset[i][0]))
+                    whole_dataset = whole_dataset[i:,:] 
+                    break
+            print('len dataset2 ' + str(len(whole_dataset)))   
+        elif(dataset_type == 'dataset2'):
+            ## still ochlv
+            dataset = pd.read_csv('/home/catalin/git_workspace/disertatie/databases/btc_klines_2014_2019.csv')
+            dataset = dataset.as_matrix
+            dataset = dataset()
+            tmp = np.zeros((np.shape(dataset)[0],np.shape(dataset)[1]-1))
+            for i in range(len(dataset)):
+                tmp[i][:] = dataset[i][1:]
+            whole_dataset = np.array(sorted(tmp, key=lambda x: x[0])) ## fix for csv UTC time in descending order
+        else:
+            print('unknown dataset type')
+                    
         for i in range (1, len(whole_dataset)):
             if whole_dataset[i][0] == 0:
                 whole_dataset[i] = whole_dataset[i-1]
                 whole_dataset[i][0] += 900000
-        ##############
-        whole_dataset = whole_dataset[:-3]
-        whole_dataset = whole_dataset[:-1] ## remove last candle
                 
+                
+                
+        ##############
+        #whole_dataset = whole_dataset[:-3]   
+        db_start = whole_dataset[0][0]
+        db_end = whole_dataset[-1][0]
+
+        if(datetime_interval):
+            interval_index = get_data_interval(whole_dataset[:,0], 
+                                               datetime_interval['start'],
+                                               datetime_interval['end'])
+            whole_dataset = whole_dataset[interval_index['start'] : interval_index['end']]
+        #whole_dataset = whole_dataset[:-1] ## remove last candle
+        
+        print(whole_dataset.shape)
         dataset_dict = {}
         for i in range (len(whole_dataset.T)):
             dataset_dict[dictionary[i]] = whole_dataset[:,i]
+
+
+         
                    
         X = copy.copy(whole_dataset)
         X = X[:,1:] ## remove time column
         
-        #### preprocess
-        if index_proc == 'preprocessed':
+#        ### preprocess
+#        if index_proc == 'preprocessed':
 #            lam = 0.5 
 #            lam = 0.999 ## highest accuracy if all are preprocessed
-            lam = preproc_constant
-            for i in range(1,X.shape[0]):
-                for j in range(X.shape[1]):
-                    X[i][j] = X[i-1][j] * lam + (1 - lam) * X[i][j]
-            #### end preprocess
+#            lam = preproc_constant
+#            for i in range(1,X.shape[0]):
+#                for j in range(X.shape[1]):
+#                    X[i][j] = X[i-1][j] * lam + (1 - lam) * X[i][j]
+#            #### end preprocess
 
         if(normalization_method == "rescale"):
             X_norm_prices, min_prices, max_prices = mn.normalize_rescale(X[:,0:4])
@@ -340,12 +487,18 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
         
         X[:,0:4] = X_norm_prices
         X[:,4] = X_norm_volume
+        if(input_noise_debug):
+            X = np.random.random(np.shape(X))
         if index_proc == 'preprocessed':
+            open_prices = X[:,0]
             close_prices = X[:,1]
             high_prices = X[:,2]
             low_prices = X[:,3]
             volume = X[:,4]
-            
+#            
+            if(blockchain_indicators):
+                feature_names.extend(blockchain_indicators)
+                print('debug ', feature_names)
             
             RSI = mta.RSI(close_prices, '15min', feature_names = feature_names)
             RSI_threshold_flags = mta.get_threshold_flags(RSI,
@@ -394,23 +547,36 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
                                                              lam = 0.99
                                                              )     
 
-            MFI = mta.money_flow_index(close_prices, 
-                                       high_prices, 
-                                       low_prices, 
-                                       volume, 
-                                       time_frame = 14, 
-                                       feature_names = feature_names)
+            dict_MFI = mta.money_flow_index(close_prices, 
+                                              high_prices, 
+                                              low_prices, 
+                                              volume, 
+                                              time_frame = 2 , 
+                                              feature_names = feature_names)
 
-            MFI_threshold_flags = mta.get_threshold_flags(MFI,
+
+            MFI_threshold_flags = mta.get_threshold_flags(dict_MFI['MFI'],
                                                           upper_thresh = 80,
                                                           lower_thresh = 20,
                                                           lam = 0.99
                                                           )
-            divergence_MFI = mta.money_flow_divergence(close_prices, MFI, 300, feature_names = feature_names)  
+            divergence_MFI = mta.money_flow_divergence(close_prices, dict_MFI['MFI'], 300, feature_names = feature_names)  
             
             
-            Tenkan_sen, Kijun_sen, Senkou_Span_A, Senkou_Span_B, Chikou_Span, cloud_flags, tk_cross_flags, oc_cloud_flags \
-                = mta.Ichimoku_Cloud_Indicator(dataset_dict, 9, 26, 26, 52, 22, feature_names = feature_names)
+#            Tenkan_sen, Kijun_sen, Senkou_Span_A, Senkou_Span_B, Chikou_Span, cloud_flags, tk_cross_flags, oc_cloud_flags \
+#                = mta.Ichimoku_Cloud_Indicator(dataset_dict, 9, 26, 26, 52, 22, feature_names = feature_names)
+#            
+            
+            dict_Ichimoku_Cloud = mta.Ichimoku_Cloud_Indicator(dataset_dict = {'high':high_prices,
+                                                                       'low':low_prices,
+                                                                       'close':close_prices}, 
+                                                               time_span_Tenkan = 9 *2, 
+                                                               time_span_Kijun = 26 * 2, 
+                                                               displacement = 26 * 2, 
+                                                               time_span_Span_B = 52 * 2, 
+                                                               displacement_Chikou = 26 * 2,
+                                                               flag_decay_span = 10,
+                                                               feature_names = feature_names)
             
             ADL = mta.Accum_distrib(dataset_dict, feature_names = feature_names)
         
@@ -418,34 +584,33 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
             SMA_26_day_values, EMA_26_day_values = mta.SMA_EMA(close_prices, 26, feature_names = feature_names)
             
             MACD_line, MACD_signal_line, MACD_histogram, MACD_divergence = mta.MACD(close_prices, 
-                                                                                    EMA_12_day_values, 
-                                                                                    EMA_26_day_values,  
-                                                                                    divergence_window = 300,
+                                                                                    12, 
+                                                                                    26,  
                                                                                     feature_names = feature_names)
-            ## get MACD for 15 min
-            SMA_12_day_values, EMA_12_day_values = mta.SMA_EMA(close_prices, 12, feature_names = feature_names)
-            SMA_26_day_values, EMA_26_day_values = mta.SMA_EMA(close_prices, 26, feature_names = feature_names)
-            
-            MACD_line_15_min, \
-            MACD_signal_line_15_min, \
-            MACD_histogram_15_min, \
-            MACD_divergence_15_min = mta.MACD(close_prices, 
-                                              EMA_12_day_values, 
-                                              EMA_26_day_values,  
-                                              divergence_window = 300,
-                                              feature_names = feature_names)
-            
-            SMA_12_day_values, EMA_12_day_values = mta.SMA_EMA(close_prices, 12 * 15 * 4, feature_names = feature_names)
-            SMA_26_day_values, EMA_26_day_values = mta.SMA_EMA(close_prices, 26 * 15 * 4, feature_names = feature_names)
-            
-            MACD_line_1h, \
-            MACD_signal_line_1h, \
-            MACD_histogram_1h, \
-            MACD_divergence_1h = mta.MACD(close_prices, 
-                                          EMA_12_day_values, 
-                                          EMA_26_day_values,  
-                                          divergence_window = 300,
-                                          feature_names = feature_names)
+#            ## get MACD for 15 min
+#            SMA_12_day_values, EMA_12_day_values = mta.SMA_EMA(close_prices, 12, feature_names = feature_names)
+#            SMA_26_day_values, EMA_26_day_values = mta.SMA_EMA(close_prices, 26, feature_names = feature_names)
+#            
+#            MACD_line_15_min, \
+#            MACD_signal_line_15_min, \
+#            MACD_histogram_15_min, \
+#            MACD_divergence_15_min = mta.MACD(close_prices, 
+#                                              EMA_12_day_values, 
+#                                              EMA_26_day_values,  
+#                                              divergence_window = 300,
+#                                              feature_names = feature_names)
+#            
+#            SMA_12_day_values, EMA_12_day_values = mta.SMA_EMA(close_prices, 12 * 15 * 4, feature_names = feature_names)
+#            SMA_26_day_values, EMA_26_day_values = mta.SMA_EMA(close_prices, 26 * 15 * 4, feature_names = feature_names)
+#            
+#            MACD_line_1h, \
+#            MACD_signal_line_1h, \
+#            MACD_histogram_1h, \
+#            MACD_divergence_1h = mta.MACD(close_prices, 
+#                                          EMA_12_day_values, 
+#                                          EMA_26_day_values,  
+#                                          divergence_window = 300,
+#                                          feature_names = feature_names)
             
             talib_MACD = talib.MACD(close_prices)
             talib_MACD1 = talib_MACD[0]
@@ -498,8 +663,8 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
                                                                             feature_names = feature_names)
             
             nlms_indicator, nlms_smoothed_indicator = mta.NLMS_indicator(close_prices, 
-                                                                         time_period = 300, 
-                                                                         nlms_step = 0.1, 
+                                                                         time_period = 4, 
+                                                                         nlms_step = 0.5, 
                                                                          nlms_constant = 0.5, 
                                                                          lam = 0.9, 
                                                                          feature_names = feature_names)
@@ -532,6 +697,37 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
             
             sentiment_indicator_positive, sentiment_indicator_negative = mta.get_sentiment_indicator_from_db(dataset_dict)
             
+            if(blockchain_indicators):
+                hashrate_raw = mb.get_blockchain_historical_data(chart_type = 'hash-rate',
+                                                                  time_span = 'all',
+                                                                  rolling_average= None, 
+                                                                  api_code = '44649562764')
+                hashrate = mb.rescale_blockchain_indicator(hashrate_raw, dataset_dict['UTC'])
+                
+                
+                difficulty_raw = mb.get_blockchain_historical_data(chart_type = 'difficulty',
+                                                                  time_span = 'all',
+                                                                  rolling_average= None)
+                difficulty = mb.rescale_blockchain_indicator(difficulty_raw, dataset_dict['UTC'])
+                
+                
+#                total_btc_sent_raw = mb.get_blockchain_historical_data(chart_type = 'total_btc_sent',
+#                                                                  time_span = 'all',
+#                                                                  rolling_average= None)
+#                total_btc_sent = mb.rescale_blockchain_indicator(total_btc_sent_raw, dataset_dict['UTC'])
+#                
+                
+                estimated_transaction_volume_usd_raw = mb.get_blockchain_historical_data(chart_type = 'difficulty',
+                                                                  time_span = 'all',
+                                                                  rolling_average= None)
+                estimated_transaction_volume_usd = mb.rescale_blockchain_indicator(estimated_transaction_volume_usd_raw, dataset_dict['UTC'])
+            
+#    
+                miners_revenue_btc_raw = mb.get_blockchain_historical_data(chart_type = 'difficulty',
+                                                                  time_span = 'all',
+                                                                  rolling_average= None)
+                miners_revenue_btc = mb.rescale_blockchain_indicator(miners_revenue_btc_raw, dataset_dict['UTC'])
+            
             dict_features = {}
             dict_features[var_name_to_string(RSI = RSI)] = RSI
             dict_features[var_name_to_string(RSI_threshold_flags = RSI_threshold_flags)] = RSI_threshold_flags
@@ -539,17 +735,21 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
             dict_features[var_name_to_string(stochastic_RSI = stochastic_RSI)] = stochastic_RSI
             dict_features[var_name_to_string(stochastic_RSI_threshold_flags = stochastic_RSI_threshold_flags)] = stochastic_RSI_threshold_flags
             dict_features[var_name_to_string(divergence_stochastic_RSI = divergence_stochastic_RSI)] = divergence_stochastic_RSI
-            dict_features[var_name_to_string(MFI = MFI)] = MFI
+            if(dict_MFI):
+                dict_features.update(dict_MFI)
+#            dict_features[var_name_to_string(MFI = MFI)] = MFI
             dict_features[var_name_to_string(MFI_threshold_flags = MFI_threshold_flags)] = MFI_threshold_flags
             dict_features[var_name_to_string(divergence_MFI = divergence_MFI)] = divergence_MFI
-            dict_features[var_name_to_string(Tenkan_sen = Tenkan_sen)] = Tenkan_sen
-            dict_features[var_name_to_string(Kijun_sen = Kijun_sen)] = Kijun_sen
-            dict_features[var_name_to_string(Senkou_Span_A = Senkou_Span_A)] = Senkou_Span_A[:-26]
-            dict_features[var_name_to_string(Senkou_Span_B = Senkou_Span_B)] = Senkou_Span_B[:-26]
-            dict_features[var_name_to_string(Chikou_Span = Chikou_Span)] = Chikou_Span
-            dict_features[var_name_to_string(cloud_flags = cloud_flags)] = cloud_flags[:-26]
-            dict_features[var_name_to_string(tk_cross_flags = tk_cross_flags)] = tk_cross_flags
-            dict_features[var_name_to_string(oc_cloud_flags = oc_cloud_flags)] = oc_cloud_flags
+            if(dict_Ichimoku_Cloud):
+                dict_features.update(dict_Ichimoku_Cloud)
+#            dict_features[var_name_to_string(Tenkan_sen = Tenkan_sen)] = Tenkan_sen
+#            dict_features[var_name_to_string(Kijun_sen = Kijun_sen)] = Kijun_sen
+#            dict_features[var_name_to_string(Senkou_Span_A = Senkou_Span_A)] = Senkou_Span_A[:-26]
+#            dict_features[var_name_to_string(Senkou_Span_B = Senkou_Span_B)] = Senkou_Span_B[:-26]
+#            dict_features[var_name_to_string(Chikou_Span = Chikou_Span)] = Chikou_Span
+#            dict_features[var_name_to_string(cloud_flags = cloud_flags)] = cloud_flags[:-26]
+#            dict_features[var_name_to_string(tk_cross_flags = tk_cross_flags)] = tk_cross_flags
+#            dict_features[var_name_to_string(oc_cloud_flags = oc_cloud_flags)] = oc_cloud_flags
             dict_features[var_name_to_string(ADL = ADL)] = ADL
             dict_features[var_name_to_string(SMA_12_day_values = SMA_12_day_values)] = SMA_12_day_values
             dict_features[var_name_to_string(EMA_12_day_values = EMA_12_day_values)] = EMA_12_day_values
@@ -558,15 +758,15 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
             dict_features[var_name_to_string(MACD_line = MACD_line)] = MACD_line
             dict_features[var_name_to_string(MACD_signal_line = MACD_signal_line)] = MACD_signal_line
             dict_features[var_name_to_string(MACD_histogram = MACD_histogram)] = MACD_histogram
-            dict_features[var_name_to_string(MACD_divergence = MACD_divergence)] = MACD_divergence
-            dict_features[var_name_to_string(MACD_line_15_min = MACD_line_15_min)] = MACD_line_15_min
-            dict_features[var_name_to_string(MACD_signal_line_15_min = MACD_signal_line_15_min)] = MACD_signal_line_15_min
-            dict_features[var_name_to_string(MACD_histogram_15_min = MACD_histogram_15_min)] = MACD_histogram_15_min
-            dict_features[var_name_to_string(MACD_divergence_15_min = MACD_divergence_15_min)] = MACD_divergence_15_min
-            dict_features[var_name_to_string(MACD_line_1h = MACD_line_1h)] = MACD_line_1h
-            dict_features[var_name_to_string(MACD_signal_line_1h = MACD_signal_line_1h)] = MACD_signal_line_1h
-            dict_features[var_name_to_string(MACD_histogram_1h = MACD_histogram_1h)] = MACD_histogram_1h
-            dict_features[var_name_to_string(MACD_divergence_1h = MACD_divergence_1h)] = MACD_divergence_1h
+#            dict_features[var_name_to_string(MACD_divergence = MACD_divergence)] = MACD_divergence
+#            dict_features[var_name_to_string(MACD_line_15_min = MACD_line_15_min)] = MACD_line_15_min
+#            dict_features[var_name_to_string(MACD_signal_line_15_min = MACD_signal_line_15_min)] = MACD_signal_line_15_min
+#            dict_features[var_name_to_string(MACD_histogram_15_min = MACD_histogram_15_min)] = MACD_histogram_15_min
+#            dict_features[var_name_to_string(MACD_divergence_15_min = MACD_divergence_15_min)] = MACD_divergence_15_min
+#            dict_features[var_name_to_string(MACD_line_1h = MACD_line_1h)] = MACD_line_1h
+#            dict_features[var_name_to_string(MACD_signal_line_1h = MACD_signal_line_1h)] = MACD_signal_line_1h
+#            dict_features[var_name_to_string(MACD_histogram_1h = MACD_histogram_1h)] = MACD_histogram_1h
+#            dict_features[var_name_to_string(MACD_divergence_1h = MACD_divergence_1h)] = MACD_divergence_1h
             dict_features[var_name_to_string(talib_MACD1 = talib_MACD1)] = talib_MACD1
             dict_features[var_name_to_string(talib_MACD2 = talib_MACD2)] = talib_MACD2
             dict_features[var_name_to_string(talib_MACD3 = talib_MACD3)] = talib_MACD3
@@ -618,16 +818,28 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
 #            dict_features[var_name_to_string(rls_smoothed_indicator = rls_smoothed_indicator)] = rls_smoothed_indicator                                         
             dict_features[var_name_to_string(sentiment_indicator_positive = sentiment_indicator_positive)] = sentiment_indicator_positive
             dict_features[var_name_to_string(sentiment_indicator_negative = sentiment_indicator_negative)] = sentiment_indicator_negative
+            if(blockchain_indicators):
+                dict_features[var_name_to_string(hashrate = hashrate)] = hashrate
+                dict_features[var_name_to_string(difficulty = difficulty)] = difficulty
+#                dict_features[var_name_to_string(total_btc_sent = total_btc_sent)] = total_btc_sent
+                dict_features[var_name_to_string(estimated_transaction_volume_usd = estimated_transaction_volume_usd)] = estimated_transaction_volume_usd
+                dict_features[var_name_to_string(miners_revenue_btc = miners_revenue_btc)] = miners_revenue_btc
+#            
+            
+            
             
             print('X initial shape ' + str(np.shape(X)))
             for i in feature_names:
                 try:
+                    print('appending feature: ' + i)
+                    print(dict_features[i].shape)
                     X = md.concatenator([X, dict_features[i]])
                 except:
                     print('not appending feature: ' + i)
                     pass
         if(lookback):
             X = get_lookback_data(X, lookback)
+        dict_features[var_name_to_string(open_prices = open_prices)] = open_prices
         dict_features[var_name_to_string(close_prices = close_prices)] = close_prices
         dict_features[var_name_to_string(high_prices = high_prices)] = high_prices
         dict_features[var_name_to_string(low_prices = low_prices)] = low_prices
@@ -649,6 +861,7 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
                     return_dataset['max_volume'] = max_volume
                 return_dataset['dataset_dict'] = dataset_dict
                 return_dataset['features'] = dict_features
+                return_dataset['start_end_date'] = {'start':db_start, 'end':db_end}
                 
         elif(normalization_method == "norm"):
             X_norm_prices, X_norm_prices_denorm_constant = mn.normalize_norm(X[:,0:4])
@@ -668,6 +881,7 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
                 return_dataset['X_norm_prices_denorm_constant'] = X_norm_prices_denorm_constant
                 return_dataset['X_norm_volume_denorm_constant'] = X_norm_volume_denorm_constant
                 return_dataset['dataset_dict'] = dataset_dict
+                return_dataset['start_end_date'] = {'start':db_start, 'end':db_end}
             
 #        if(normalization_method == "standardization"):
 #            X_norm_prices = mn.normalize_standardization(X[:,0:4])
@@ -690,7 +904,15 @@ def get_dataset_with_descriptors(concatenate_datasets_preproc_flag,
             
     return return_dataset
 
-def get_test_and_train_data(preprocessed_data, unprocessed_data, chunks, chunks_for_training, remove_chunks_from_start):
+def cross_val_data_split(x1, x2, cross_vals):
+    testing_split_index = cross_vals
+    numbers_of_chunks, chunk_size, number_of_feats = np.shape(x1)
+    train_data = x1[:testing_split_index,:,:]
+    print(np.shape(train_data))
+    train_data = np.concatenate([train_data, x1[testing_split_index+1:,:,:]])
+    print(np.shape(train_data))
+
+def get_test_and_train_data(preprocessed_data, unprocessed_data, chunks, chunks_for_training, remove_chunks_from_start, cross_validation = None):
 #    chunks = 11
 #    chunks_for_training = 9
     if((remove_chunks_from_start + chunks_for_training) > chunks):
@@ -698,21 +920,25 @@ def get_test_and_train_data(preprocessed_data, unprocessed_data, chunks, chunks_
         return 0
     X_chunks = md.get_split(preprocessed_data,chunks)
     X_chunks_unprocessed = md.get_split(unprocessed_data,chunks)
-    train_data = X_chunks[remove_chunks_from_start : (remove_chunks_from_start + chunks_for_training)]
-    train_data_unprocessed = X_chunks_unprocessed[remove_chunks_from_start : (remove_chunks_from_start + chunks_for_training)]
-    test_data = X_chunks[(chunks_for_training + remove_chunks_from_start):]
-    test_data_unprocessed = X_chunks_unprocessed[(chunks_for_training + remove_chunks_from_start):]
-    
-    train_data = np.reshape(train_data, ( train_data.shape[0] * train_data.shape[1], train_data.shape[2] ))
-    train_data_unprocessed = np.reshape(train_data_unprocessed, ( train_data_unprocessed.shape[0] * train_data_unprocessed.shape[1], train_data_unprocessed.shape[2] ))
-    test_data = np.reshape(test_data, ( test_data.shape[0] * test_data.shape[1], test_data.shape[2] ))
-    test_data_unprocessed = np.reshape(test_data_unprocessed, ( test_data_unprocessed.shape[0] * test_data_unprocessed.shape[1], test_data_unprocessed.shape[2] ))
+    print('chunks ',np.shape(X_chunks))
+    if(cross_validation and 0):
+        dict_data = cross_val_data_split(X_chunks, X_chunks_unprocessed, cross_validation)
+    else:        
+        train_data = X_chunks[remove_chunks_from_start : (remove_chunks_from_start + chunks_for_training)]
+        train_data_unprocessed = X_chunks_unprocessed[remove_chunks_from_start : (remove_chunks_from_start + chunks_for_training)]
+        test_data = X_chunks[(chunks_for_training + remove_chunks_from_start):]
+        test_data_unprocessed = X_chunks_unprocessed[(chunks_for_training + remove_chunks_from_start):]
+        
+        train_data = np.reshape(train_data, ( train_data.shape[0] * train_data.shape[1], train_data.shape[2] ))
+        train_data_unprocessed = np.reshape(train_data_unprocessed, ( train_data_unprocessed.shape[0] * train_data_unprocessed.shape[1], train_data_unprocessed.shape[2] ))
+        test_data = np.reshape(test_data, ( test_data.shape[0] * test_data.shape[1], test_data.shape[2] ))
+        test_data_unprocessed = np.reshape(test_data_unprocessed, ( test_data_unprocessed.shape[0] * test_data_unprocessed.shape[1], test_data_unprocessed.shape[2] ))
 
-    dict_data = {}
-    dict_data["test_data_preprocessed"] = test_data
-    dict_data["test_data_unprocessed"] = test_data_unprocessed
-    dict_data["train_data_preprocessed"] = train_data
-    dict_data["train_data_unprocessed"] = train_data_unprocessed
+        dict_data = {}
+        dict_data["test_data_preprocessed"] = test_data
+        dict_data["test_data_unprocessed"] = test_data_unprocessed
+        dict_data["train_data_preprocessed"] = train_data
+        dict_data["train_data_unprocessed"] = train_data_unprocessed
     return dict_data
 
 def get_feature_importances(feature_names, log_path):
@@ -724,7 +950,7 @@ def get_feature_importances(feature_names, log_path):
     text = f.read()
     f.close()
     index_features = text.find('feature_importance')
-    new_text = text[index_features : index_features + 700]
+    new_text = text[index_features : index_features + 1000]
     first_bracket_index = new_text.find('[')
     last_bracket_index = new_text.find(']')
     values_text = new_text[(first_bracket_index + 1) : last_bracket_index].replace('\n', '')
@@ -735,7 +961,7 @@ def get_feature_importances(feature_names, log_path):
         if i != '':
             values.append(float(i))
     if(len(values) != len(feature_names)):
-        print('feature imp sizes do not match')
+        print('feature imp sizes do not match. parsed size: ',np.array(values).shape, ' features size: ', np.array(feature_names).shape)
         return {}        
     dict_feature_importances = {}        
     for i in range(len(feature_names)):
@@ -750,3 +976,56 @@ def get_lookback_data(X, lookback = 4):
         ceva = np.hstack((X[i,:], ceva[:-num_features]))
         a.append(ceva)
     return np.array(a)
+
+def order_performance_dict(dict_features):
+    ## key = feature name, value = list of performance results
+    a = copy.copy(dict_features)
+    a_k = list(a.keys())
+    a_v = list(a.values())
+    a_v_tmp = copy.copy(a_v)
+    ordered_values = {'keys': [], 'values': []}
+    while(1):
+        try:
+            max_value = max(a_v_tmp)
+            index = a_v.index(max_value)
+            ordered_values['keys'].append(a_k[index])
+            ordered_values['values'].append(max_value)
+            del a_v_tmp[a_v_tmp.index(max_value)]
+        except:
+            break
+    return ordered_values
+
+
+def get_feature_importances_mean(path = ''):
+
+#with open('/home/catalin/git_workspace/disertatie/dict_perf_feats.pkl', 'rb') as f:
+    with open(path, 'rb') as f:
+       feature_performances = pickle.load(f)
+       
+    ### compute mean and variance
+    mean_ft = {}
+    for i in feature_performances:
+        mean_ft[i] = np.mean(feature_performances[i])
+        
+    var_ft = {}
+    for i in feature_performances:
+        var_ft[i] = np.var(feature_performances[i])
+    
+    ### sort mean values in descending order with it's corresponding variance value
+    
+    ordered_values_mean = order_performance_dict(mean_ft)
+    ordered_values_var = {'keys': [], 'values': []}
+    for i in ordered_values_mean['keys']:
+        ordered_values_var['keys'].append(i)
+        ordered_values_var['values'].append(var_ft[i])
+    return ordered_values_mean, ordered_values_var
+
+def myalarm(path = ''):
+    from pygame import mixer # Load the required library
+    import time
+    
+    mixer.init()
+    mixer.music.load(path)
+    mixer.music.play()
+    time.sleep(6)
+    mixer.music.stop()

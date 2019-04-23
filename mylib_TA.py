@@ -11,10 +11,29 @@ import math
 import pickle
 from datetime import timedelta, date
 import mylib_dataset as md
+from copy import copy
+import scipy
+from scipy.cluster.hierarchy import dendrogram, linkage, distance
+import matplotlib.pyplot as plt
+
 
 def daterange(start_date, end_date):
     for n in range(int ((end_date - start_date).days)):
         yield start_date + timedelta(n)
+        
+def apply_linear_decay_flags(input_data, span = 20):
+    data = copy(input_data)
+    ### flags need to have 1 or 0 values only.
+    for i in range(len(data)):
+        if(data[i] == 1):
+            for j in range(span):
+                if((i + j) < len(data)):
+                    data[i + j] = 1 - j / span
+                if((i + j + 1) < len(data)):
+                    if(data[i + j + 1] == 1):
+                        i += j
+                        break
+    return data
 
 
 def DCT_transform_II(vector):
@@ -52,26 +71,124 @@ def Accum_distrib(dataset_dict, feature_names = ['ADL']):
     
     return ADL
 
+#def Ichimoku_Cloud_Indicator(dataset_dict, 
+#                             time_span_Tenkan, 
+#                             time_span_Kijun, 
+#                             displacement, 
+#                             time_span_Span_B, 
+#                             displacement_Chikou,
+#                             feature_names = ['Tenkan_sen']):
+#    
+#    user_input_tags = ['Tenkan_sen', 'Kijun_sen', 'Senkou_Span_A', 'Senkou_Span_B',
+#                       'Chikou_Span','cloud_flags', 'tk_cross_flags', 'oc_cloud_flags']
+#    ok = False
+#    for i in feature_names:
+#        if i in user_input_tags:
+#            ok = True
+#            break
+#    if(not ok):
+#        null_return = np.zeros(1000)
+#        return null_return,null_return,null_return,null_return,null_return,null_return,null_return,null_return
+#    
+#    displacement_Span_A = displacement_Span_B = displacement
+#    #time_span_Tenkan = 9 ## conversion line perios
+#    highest_high_days = [max(dataset_dict['high'][(i - time_span_Tenkan) : i]) for i in range (len(dataset_dict['high'])) if i >= time_span_Tenkan]
+#    highest_high_days = np.pad(highest_high_days, ( (len(dataset_dict['high'])  - len(highest_high_days)),0 ), 'constant')
+#    
+#    lowest_low_days = [min(dataset_dict['low'][(i - time_span_Tenkan) : i]) for i in range (len(dataset_dict['low'])) if i >= time_span_Tenkan]
+#    lowest_low_days = np.pad(lowest_low_days, ( (len(dataset_dict['low'])  - len(lowest_low_days)),0 ), 'constant')
+#    
+#    Tenkan_sen = (highest_high_days + lowest_low_days) / 2
+#    Tenkan_sen = np.array(Tenkan_sen)
+#    
+#    
+#    #time_span_Kijun = 26
+#    highest_high_days = [max(dataset_dict['high'][(i - time_span_Kijun) : i]) for i in range (len(dataset_dict['high'])) if i >= time_span_Kijun]
+#    highest_high_days = np.pad(highest_high_days, ( (len(dataset_dict['high'])  - len(highest_high_days)),0 ), 'constant')
+#    
+#    lowest_low_days = [min(dataset_dict['low'][(i - time_span_Kijun) : i]) for i in range (len(dataset_dict['low'])) if i >= time_span_Kijun]
+#    lowest_low_days = np.pad(lowest_low_days, ( (len(dataset_dict['low'])  - len(lowest_low_days)),0 ), 'constant')
+#    
+#    Kijun_sen = (highest_high_days + lowest_low_days) / 2
+#    Kijun_sen = np.array(Kijun_sen)
+#
+#    #time_span_Span_A = 26
+#    #Senkou_Span_A = [((Tenkan_sen[i - time_span_Span_A] + Kijun_sen[i - time_span_Span_A]) / 2) for i in range (len(Tenkan_sen)) if i >= time_span_Span_A]
+#    #Senkou_Span_A = np.pad(Senkou_Span_A, ( (len(Tenkan_sen)  - len(Senkou_Span_A)),0 ), 'constant')
+#    #Senkou_Span_A = (Tenkan-sen + Kijun-sen) / 2
+#    
+#    #displacement_Span_A = 26
+#    Senkou_Span_A = (Tenkan_sen + Kijun_sen) / 2
+#    Senkou_Span_A = np.pad(Senkou_Span_A, ( displacement_Span_A, 0 ), 'constant')
+#    Senkou_Span_A = np.array(Senkou_Span_A)
+#    
+#    ### displacement = 26 (plotted ahead)
+#    
+#    #time_span_Span_B = 52
+#    #displacement_Span_B = 26
+#    
+#    highest_high_days = [max(dataset_dict['high'][(i - time_span_Span_B) : i]) for i in range (len(dataset_dict['high'])) if i >= time_span_Span_B]
+#    highest_high_days = np.pad(highest_high_days, ( (len(dataset_dict['high'])  - len(highest_high_days)),0 ), 'constant')
+#    
+#    lowest_low_days = [min(dataset_dict['low'][(i - time_span_Span_B) : i]) for i in range (len(dataset_dict['low'])) if i >= time_span_Span_B]
+#    lowest_low_days = np.pad(lowest_low_days, ( (len(dataset_dict['low'])  - len(lowest_low_days)),0 ), 'constant')
+#    
+#    
+#    Senkou_Span_B = (highest_high_days + lowest_low_days) / 2
+#    Senkou_Span_B = np.pad(Senkou_Span_B, ( displacement_Span_B, 0 ), 'constant')
+#    Senkou_Span_B = np.array(Senkou_Span_B)
+#    
+#    #displacement_Chikou = 22
+#    Chikou_Span = dataset_dict['close'][displacement_Chikou:]
+#    Chikou_Span = np.pad(Chikou_Span, ( 0, displacement_Chikou ), 'constant') ## plt before
+#    Chikou_Span = np.array(Chikou_Span)
+#    
+#    ######## optional bull/bear flags
+#    kumo_cloud = Senkou_Span_A - Senkou_Span_B
+#    cloud_flags = [1 if i > 0 else 0 for i in kumo_cloud] ## 1 is green
+#    cloud_flags = np.array(cloud_flags)
+#    
+#    ### flat_kumo_flags ## in progress
+#    
+#    tk_diff = Tenkan_sen - Kijun_sen  
+#    tk_cross_flags = np.add( [-1 if (tk_diff[i] > 0 and tk_diff[i-1] < 0 ) else 0 for i in range(1, len(tk_diff))], \
+#    [1 if (tk_diff[i] < 0 and tk_diff[i-1] > 0 ) else 0 for i in range(1, len(tk_diff))] )
+#    tk_cross_flags = np.insert(tk_cross_flags, 0, 0 ) ## insert zero at start
+#    tk_cross_flags = np.array(tk_cross_flags)
+#    
+#    oc_cloud_flags = np.add([1 if ( ( dataset_dict['open'][i] > Senkou_Span_A[i] and dataset_dict['open'][i] > Senkou_Span_B[i] ) \
+#                      and (dataset_dict['close'][i] < Senkou_Span_A[i] or dataset_dict['close'][i] < Senkou_Span_B[i] )) else 0 for i in range(len(dataset_dict['open'])) ], \
+#                     [-1 if ( ( dataset_dict['open'][i] < Senkou_Span_A[i] and dataset_dict['open'][i] < Senkou_Span_B[i] ) \
+#                      and (dataset_dict['close'][i] > Senkou_Span_A[i] or dataset_dict['close'][i] > Senkou_Span_B[i] )) else 0 for i in range(len(dataset_dict['open']))])
+#    oc_cloud_flags = np.array(oc_cloud_flags)                
+#    
+#    return Tenkan_sen, Kijun_sen, Senkou_Span_A, Senkou_Span_B, Chikou_Span, cloud_flags, tk_cross_flags, oc_cloud_flags
+
+
+
 def Ichimoku_Cloud_Indicator(dataset_dict, 
-                             time_span_Tenkan, 
-                             time_span_Kijun, 
-                             displacement, 
-                             time_span_Span_B, 
-                             displacement_Chikou,
+                             time_span_Tenkan = 9, 
+                             time_span_Kijun = 26, 
+                             displacement = 26, 
+                             time_span_Span_B = 52, 
+                             displacement_Chikou = 26,
+                             flag_decay_span = 20,
                              feature_names = ['Tenkan_sen']):
     
     user_input_tags = ['Tenkan_sen', 'Kijun_sen', 'Senkou_Span_A', 'Senkou_Span_B',
-                       'Chikou_Span','cloud_flags', 'tk_cross_flags', 'oc_cloud_flags']
+                       'Chikou_Span','cloud_flags', 'close_over_cloud', 'close_under_cloud',
+                       'cross_over_Kijun', 'cross_under_Kijun', 'cross_over_Tenkan',
+                       'cross_under_Tenkan']
     ok = False
     for i in feature_names:
         if i in user_input_tags:
             ok = True
             break
     if(not ok):
-        null_return = np.zeros(1000)
-        return null_return,null_return,null_return,null_return,null_return,null_return,null_return,null_return
+        return {}
     
     displacement_Span_A = displacement_Span_B = displacement
+    
     #time_span_Tenkan = 9 ## conversion line perios
     highest_high_days = [max(dataset_dict['high'][(i - time_span_Tenkan) : i]) for i in range (len(dataset_dict['high'])) if i >= time_span_Tenkan]
     highest_high_days = np.pad(highest_high_days, ( (len(dataset_dict['high'])  - len(highest_high_days)),0 ), 'constant')
@@ -101,7 +218,7 @@ def Ichimoku_Cloud_Indicator(dataset_dict,
     #displacement_Span_A = 26
     Senkou_Span_A = (Tenkan_sen + Kijun_sen) / 2
     Senkou_Span_A = np.pad(Senkou_Span_A, ( displacement_Span_A, 0 ), 'constant')
-    Senkou_Span_A = np.array(Senkou_Span_A)
+    Senkou_Span_A = np.array(Senkou_Span_A[:-displacement_Span_A])
     
     ### displacement = 26 (plotted ahead)
     
@@ -117,7 +234,7 @@ def Ichimoku_Cloud_Indicator(dataset_dict,
     
     Senkou_Span_B = (highest_high_days + lowest_low_days) / 2
     Senkou_Span_B = np.pad(Senkou_Span_B, ( displacement_Span_B, 0 ), 'constant')
-    Senkou_Span_B = np.array(Senkou_Span_B)
+    Senkou_Span_B = np.array(Senkou_Span_B[:-displacement_Span_B])
     
     #displacement_Chikou = 22
     Chikou_Span = dataset_dict['close'][displacement_Chikou:]
@@ -126,24 +243,46 @@ def Ichimoku_Cloud_Indicator(dataset_dict,
     
     ######## optional bull/bear flags
     kumo_cloud = Senkou_Span_A - Senkou_Span_B
-    cloud_flags = [1 if i > 0 else 0 for i in kumo_cloud] ## 1 is green
-    cloud_flags = np.array(cloud_flags)
+    cloud_reversal_bull = [1 if (kumo_cloud[i] >= 0 and kumo_cloud[i-1] < 0)  else 0 for i in range(len(kumo_cloud))]
+    cloud_reversal_bear = [1 if (kumo_cloud[i] < 0 and kumo_cloud[i-1] > 0)  else 0 for i in range(len(kumo_cloud))] 
+    cloud_reversal_bull = np.array(cloud_reversal_bull)
+    cloud_reversal_bear = np.array(cloud_reversal_bear)
     
-    ### flat_kumo_flags ## in progress
+    close_over_cloud = [1 if ((dataset_dict['close'][i] > Senkou_Span_A[i] and kumo_cloud[i] >= 0) \
+                        or (dataset_dict['close'][i] > Senkou_Span_B[i] and kumo_cloud[i] < 0)) \
+                        else 0 for i in range(len(dataset_dict['close']))]
+    close_under_cloud = [1 if( (dataset_dict['close'][i] < Senkou_Span_A[i] and kumo_cloud[i] < 0) \
+                         or (dataset_dict['close'][i] < Senkou_Span_B[i] and kumo_cloud[i] >= 0)) \
+                         else 0 for i in range(len(dataset_dict['close']))]
+        
+    cross_over_Kijun = [1 if (dataset_dict['close'][i] > Kijun_sen[i] and dataset_dict['close'][i-1] < Kijun_sen[i-1]) else 0 for i in range(len(dataset_dict['close']))]
+    cross_under_Kijun = [1 if (dataset_dict['close'][i] < Kijun_sen[i] and dataset_dict['close'][i-1] > Kijun_sen[i-1]) else 0 for i in range(len(dataset_dict['close']))]
+   
+    cross_over_Tenkan = [1 if (Tenkan_sen[i] >= Kijun_sen[i] and Tenkan_sen[i-1] < Kijun_sen[i-1]) else 0 for i in range(len(dataset_dict['close']))]
+    cross_under_Tenkan = [1 if (Tenkan_sen[i] < Kijun_sen[i] and Tenkan_sen[i-1] >= Kijun_sen[i-1]) else 0 for i in range(len(dataset_dict['close']))]
+       ### flat_kumo_flags ## in progress
     
-    tk_diff = Tenkan_sen - Kijun_sen  
-    tk_cross_flags = np.add( [-1 if (tk_diff[i] > 0 and tk_diff[i-1] < 0 ) else 0 for i in range(1, len(tk_diff))], \
-    [1 if (tk_diff[i] < 0 and tk_diff[i-1] > 0 ) else 0 for i in range(1, len(tk_diff))] )
-    tk_cross_flags = np.insert(tk_cross_flags, 0, 0 ) ## insert zero at start
-    tk_cross_flags = np.array(tk_cross_flags)
-    
-    oc_cloud_flags = np.add([1 if ( ( dataset_dict['open'][i] > Senkou_Span_A[i] and dataset_dict['open'][i] > Senkou_Span_B[i] ) \
-                      and (dataset_dict['close'][i] < Senkou_Span_A[i] or dataset_dict['close'][i] < Senkou_Span_B[i] )) else 0 for i in range(len(dataset_dict['open'])) ], \
-                     [-1 if ( ( dataset_dict['open'][i] < Senkou_Span_A[i] and dataset_dict['open'][i] < Senkou_Span_B[i] ) \
-                      and (dataset_dict['close'][i] > Senkou_Span_A[i] or dataset_dict['close'][i] > Senkou_Span_B[i] )) else 0 for i in range(len(dataset_dict['open']))])
-    oc_cloud_flags = np.array(oc_cloud_flags)                
-    
-    return Tenkan_sen, Kijun_sen, Senkou_Span_A, Senkou_Span_B, Chikou_Span, cloud_flags, tk_cross_flags, oc_cloud_flags
+    if(flag_decay_span):
+        close_over_cloud = apply_linear_decay_flags(close_over_cloud, span = 20)
+        close_under_cloud = apply_linear_decay_flags(close_under_cloud, span = 20)
+        cross_over_Kijun = apply_linear_decay_flags(cross_over_Kijun, span = 20)
+        cross_under_Kijun = apply_linear_decay_flags(cross_under_Kijun, span = 20)
+        cross_over_Tenkan = apply_linear_decay_flags(cross_over_Tenkan, span = 20)
+        cross_under_Tenkan = apply_linear_decay_flags(cross_under_Tenkan, span = 20)
+
+    dict_results = { 'Tenkan_sen': np.array(Tenkan_sen),
+                     'Kijun_sen': np.array(Kijun_sen),
+                     'Senkou_Span_A': np.array(Senkou_Span_A),
+                     'Senkou_Span_B': np.array(Senkou_Span_B),
+                     'Chikou_Span': np.array(Chikou_Span),
+                     'close_over_cloud': np.array(close_over_cloud),
+                     'close_under_cloud': np.array(close_under_cloud),
+                     'cross_over_Kijun': np.array(cross_over_Kijun),
+                     'cross_under_Kijun': np.array(cross_under_Kijun),
+                     'cross_over_Tenkan': np.array(cross_over_Tenkan),
+                     'cross_under_Tenkan': np.array(cross_under_Tenkan)
+                    }                      
+    return dict_results
 
 
 def support_levels(x, window_size, time_period):
@@ -226,7 +365,58 @@ def MACD_divergence(close_prices, MACD_line, divergence_window):
     divergence_values = np.add(bullish_div, bearish_div)  
     return np.array(divergence_values)
 
-def SMA_EMA(close_prices, days, feature_names = ['SMA_12_day_values']):
+#def SMA_EMA(close_prices, days, feature_names = ['SMA_12_day_values']):
+#    user_input_tags = ['SMA_12_day_values', 'EMA_12_day_values', 'SMA_26_day_values','EMA_26_day_values',
+#                       'MACD_line', 'MACD_signal_line', 'MACD_histogram', 'MACD_line_15_min', 
+#                       'MACD_signal_line_15_min', 'MACD_histogram_15_min', 'MACD_divergence_15_min',
+#                       'MACD_line_1h', 'MACD_signal_line_1h', 'MACD_histogram_1h', 'MACD_divergence_1h']
+#    ok = False
+#    for i in user_input_tags:
+#        if i in feature_names:
+#            ok = True
+#            break
+#    if(not ok):
+#        return 0,0
+#    
+#    SMA = 0
+#    SMA_values = []
+#    EMA_values = []
+#    time_frame = days * 4 * 24
+#    EMA_time_period = 2 / (days + 1)
+#    for i in range(len(close_prices)):
+#        if(i < time_frame):
+#            ## add mean values
+#            SMA += close_prices[i] / time_frame
+#            EMA = SMA
+#        else:
+#            SMA = SMA - ((close_prices[i - time_frame] - close_prices[i]) / days)     
+#            EMA = (close_prices[i] - EMA) * EMA_time_period + EMA
+#        SMA_values.append(SMA)
+#        EMA_values.append(EMA)
+#    return np.array(SMA_values), np.array(EMA_values)
+#
+#def MACD(close_prices, EMA_12_day_values, EMA_26_day_values, divergence_window, feature_names = ['MACD_line_15_min']):
+#    user_input_tags = ['MACD_line', 'MACD_signal_line', 'MACD_histogram', 
+#                       'MACD_line_15_min', 'MACD_signal_line_15_min', 'MACD_histogram_15_min', 'MACD_divergence_15_min',
+#                       'MACD_line_1h', 'MACD_signal_line_1h', 'MACD_histogram_1h', 'MACD_divergence_1h']
+#    ok = False
+#    for i in user_input_tags:
+#        if(i in feature_names):
+#            ok = True
+#            break
+#    if(not ok):
+#        return 0,0,0,0
+#
+#    MACD_line = [EMA_12_day_values[i] - EMA_26_day_values[i] for i in range(len(EMA_26_day_values))] 
+#    SMA_9_day_MACD, EMA_9_day_MACD = SMA_EMA(MACD_line, 26)
+#    MACD_histogram = [MACD_line[i] - EMA_9_day_MACD[i] for i in range(len(EMA_9_day_MACD))]
+#    
+#    ## get divergences
+#    divergence_values = MACD_divergence(close_prices, MACD_line, divergence_window)
+#    MACD_signal_line = EMA_9_day_MACD
+#    return np.array(MACD_line), np.array(MACD_signal_line), np.array(MACD_histogram), np.array(divergence_values)
+
+def SMA_EMA(close_prices, periods = 12, feature_names = ['SMA_12_day_values']):
     user_input_tags = ['SMA_12_day_values', 'EMA_12_day_values', 'SMA_26_day_values','EMA_26_day_values',
                        'MACD_line', 'MACD_signal_line', 'MACD_histogram', 'MACD_line_15_min', 
                        'MACD_signal_line_15_min', 'MACD_histogram_15_min', 'MACD_divergence_15_min',
@@ -242,21 +432,22 @@ def SMA_EMA(close_prices, days, feature_names = ['SMA_12_day_values']):
     SMA = 0
     SMA_values = []
     EMA_values = []
-    time_frame = days * 4 * 24
-    EMA_time_period = 2 / (days + 1)
+    time_frame = periods
+    EMA_time_period = 2 / (periods + 1)
+    EMA = 0
     for i in range(len(close_prices)):
-        if(i < time_frame):
+        if(i < periods):
             ## add mean values
-            SMA += close_prices[i] / time_frame
+            SMA += close_prices[i] / periods
             EMA = SMA
         else:
-            SMA = SMA - ((close_prices[i - time_frame] - close_prices[i]) / days)     
+            SMA = SMA - ((close_prices[i - time_frame] - close_prices[i]) / periods)     
             EMA = (close_prices[i] - EMA) * EMA_time_period + EMA
         SMA_values.append(SMA)
         EMA_values.append(EMA)
     return np.array(SMA_values), np.array(EMA_values)
 
-def MACD(close_prices, EMA_12_day_values, EMA_26_day_values, divergence_window, feature_names = ['MACD_line_15_min']):
+def MACD(close_prices, ema_26_period = 26, ema_12_period = 12, feature_names = ['MACD_line_15_min']):
     user_input_tags = ['MACD_line', 'MACD_signal_line', 'MACD_histogram', 
                        'MACD_line_15_min', 'MACD_signal_line_15_min', 'MACD_histogram_15_min', 'MACD_divergence_15_min',
                        'MACD_line_1h', 'MACD_signal_line_1h', 'MACD_histogram_1h', 'MACD_divergence_1h']
@@ -267,15 +458,22 @@ def MACD(close_prices, EMA_12_day_values, EMA_26_day_values, divergence_window, 
             break
     if(not ok):
         return 0,0,0,0
-
-    MACD_line = [EMA_12_day_values[i] - EMA_26_day_values[i] for i in range(len(EMA_26_day_values))] 
-    SMA_9_day_MACD, EMA_9_day_MACD = SMA_EMA(MACD_line, 26)
+    
+    s, EMA_26_day_values = SMA_EMA(close_prices, ema_26_period)
+    s, EMA_12_day_values = SMA_EMA(close_prices, ema_12_period)
+    MACD_line = np.zeros(len(EMA_26_day_values))
+    for i in range(len(EMA_26_day_values)):
+        MACD_line[i] = EMA_12_day_values[i] - EMA_26_day_values[i]
+        if(MACD_line[i] > 10):
+            MACD_line[i] = 0
+    SMA_9_day_MACD, EMA_9_day_MACD = SMA_EMA(MACD_line, 9)
     MACD_histogram = [MACD_line[i] - EMA_9_day_MACD[i] for i in range(len(EMA_9_day_MACD))]
     
     ## get divergences
-    divergence_values = MACD_divergence(close_prices, MACD_line, divergence_window)
+    divergence_values = 0
     MACD_signal_line = EMA_9_day_MACD
     return np.array(MACD_line), np.array(MACD_signal_line), np.array(MACD_histogram), np.array(divergence_values)
+
 
 def RSI(close_prices, time_frame = '15min',feature_names = ['RSI']):
     user_input_tags = ['divergence_RSI', 'RSI']
@@ -438,25 +636,60 @@ def RSI_divergence(close_prices, RSI_values, divergence_window, feature_names = 
     divergence_values = np.add(bullish_div, bearish_div)    
     return np.array(divergence_values)
 
+#def money_flow_index(close_prices, high_prices, low_prices, volume, time_frame, feature_names = ['MFI']):
+#    if('MFI' not in feature_names):
+#        return 0
+#    diff_circular_buffer = np.zeros(time_frame)
+#    MFI_values = []
+#    raw_money_flow = 0
+#    for i in range(len(close_prices)):
+#        typical_price = (high_prices[i] + low_prices[i] + close_prices[i]) / 3
+#        previous_money_flow = raw_money_flow
+#        raw_money_flow = typical_price * volume[i]
+#        
+#        diff = raw_money_flow - previous_money_flow
+#        diff_circular_buffer = np.hstack((diff, diff_circular_buffer[:-1]))
+#        positive_money_flow = np.sum([i if (i > 0) else 0 for i in diff_circular_buffer])
+#        negative_money_flow = np.sum([-i if (i < 0) else 0 for i in diff_circular_buffer])
+#        if(negative_money_flow < 0.0000001):
+#            MFI_values.append(100) ## happens 0.67% times in 144368 samples
+#        else:      
+#            money_flow_ratio = positive_money_flow / negative_money_flow
+#            MFI_values.append(100 - (100/(1 + money_flow_ratio)))
+#    return np.array(MFI_values)
+    
 def money_flow_index(close_prices, high_prices, low_prices, volume, time_frame, feature_names = ['MFI']):
+    #The Money Flow Index (MFI) is a technical oscillator that uses price and volume for identifying overbought or oversold
     if('MFI' not in feature_names):
         return 0
-    diff_circular_buffer = np.zeros(time_frame)
+    diff_circular_buffer_pos = np.zeros(time_frame)
+    diff_circular_buffer_neg = np.zeros(time_frame)
     MFI_values = []
     raw_money_flow = 0
+    diff = 0
     for i in range(len(close_prices)):
         typical_price = (high_prices[i] + low_prices[i] + close_prices[i]) / 3
-        previous_money_flow = raw_money_flow
         raw_money_flow = typical_price * volume[i]
+        if(i > 0):
+            diff = close_prices[i] - close_prices[i-1]
         
-        diff = raw_money_flow - previous_money_flow
-        diff_circular_buffer = np.hstack((diff, diff_circular_buffer[:-1]))
-        positive_money_flow = np.sum([i if (i > 0) else 0 for i in diff_circular_buffer])
-        negative_money_flow = np.sum([-i if (i < 0) else 0 for i in diff_circular_buffer])
-                
-        money_flow_ratio = positive_money_flow / negative_money_flow
-        MFI_values.append(100 - (100/(1 + money_flow_ratio)))
-    return np.array(MFI_values)
+        if(diff >= 0):
+            diff_circular_buffer_pos = np.hstack((raw_money_flow, diff_circular_buffer_pos[:-1]))
+            diff_circular_buffer_neg = np.hstack((0, diff_circular_buffer_neg[:-1]))
+        else:
+            diff_circular_buffer_pos = np.hstack((0, diff_circular_buffer_pos[:-1]))
+            diff_circular_buffer_neg = np.hstack((raw_money_flow, diff_circular_buffer_neg[:-1]))            
+        
+        positive_money_flow = np.sum(diff_circular_buffer_pos)
+        negative_money_flow = np.sum(diff_circular_buffer_neg)
+        
+        if(negative_money_flow < 0.0000001):
+            MFI_values.append(100) ## happens 0.67% times in 144368 samples
+        else:
+            money_flow_ratio = positive_money_flow / negative_money_flow
+            MFI_values.append(100 - (100/(1 + money_flow_ratio)))
+    dict_MFI = {'MFI' : np.array(MFI_values)}
+    return dict_MFI
 
 def money_flow_divergence(close_prices, MFI_values, divergence_window, feature_names = ['divergence_MFI']):
     if('divergence_MFI' not in feature_names):
@@ -842,6 +1075,11 @@ def VBP(close_prices, volume, bins = 12, lam = 0.99, feature_names = ['volume_by
                     slope_VBP.append(VBP[-1] - VBP[-2])
                     slope_VPB_smooth.append(slope_VBP[-2] * lam + slope_VBP[-1] * (1-lam))
                 break
+            if(j == len(bin_values)-1):
+                ### TO DO: figure out what this case means...
+                VBP.append(0)
+                slope_VBP.append(0)
+                slope_VPB_smooth.append(0)
     
     return np.array(VBP), np.array(slope_VBP), np.array(slope_VPB_smooth)
 
@@ -952,11 +1190,14 @@ def Chaikin_money_flow(close, high, low, volume, time_period = 21, feature_names
     volume_circular_buffer = np.zeros(time_period)
     CMF = []
     for i in range(len(close)):
-        MF_multiplier = ((close[i] - low[i]) - (high[i] - close[i])) / (high[i] - low[i])
-        MF_volume = MF_multiplier * volume[i]
-        MF_volume_circular_buffer = np.hstack((MF_volume, MF_volume_circular_buffer[:-1]))
-        volume_circular_buffer = np.hstack((volume[i], volume_circular_buffer[:-1]))
-        CMF.append(np.sum(MF_volume_circular_buffer) / np.sum(volume_circular_buffer))
+        if((high[i] - low[i]) < 0.000001):
+            CMF.append(999999)
+        else:
+            MF_multiplier = ((close[i] - low[i]) - (high[i] - close[i])) / (high[i] - low[i])
+            MF_volume = MF_multiplier * volume[i]
+            MF_volume_circular_buffer = np.hstack((MF_volume, MF_volume_circular_buffer[:-1]))
+            volume_circular_buffer = np.hstack((volume[i], volume_circular_buffer[:-1]))
+            CMF.append(np.sum(MF_volume_circular_buffer) / np.sum(volume_circular_buffer))
     return np.array(CMF)
 
 def get_sentiment_indicator_from_db(dataset_dict, path = '/home/catalin/databases/tweets/nltk_2014_2018_300_per_day.pkl'):
@@ -969,8 +1210,8 @@ def get_sentiment_indicator_from_db(dataset_dict, path = '/home/catalin/database
     for single_date in daterange(start_date, end_date):
         dates.append(str(single_date))
         
-    start_date = md.get_date_from_UTC_ms(dataset_dict['UTC'][0])
-    end_date = md.get_date_from_UTC_ms(dataset_dict['UTC'][-1])
+    start_date = md.get_date_from_UTC_ms(dataset_dict['UTC'][0])['date_str'] 
+    end_date = md.get_date_from_UTC_ms(dataset_dict['UTC'][-1])['date_str'] 
     
     start = False
     end = False
@@ -987,3 +1228,19 @@ def get_sentiment_indicator_from_db(dataset_dict, path = '/home/catalin/database
             sentiment_indicator_positive[step_1_day * (i+1) : step_1_day * (i+2)] = tweets[dates[i]]['pos']
             sentiment_indicator_negative[step_1_day * (i+1) : step_1_day * (i+2)] = tweets[dates[i]]['neg']
     return np.array(sentiment_indicator_positive), np.array(sentiment_indicator_negative)
+
+def plot_dendrogram(data, labels):
+    corr = np.round(scipy.stats.spearmanr(data).correlation, 4)
+    inv_corr = 1 - corr
+    #c = np.vstack((c, np.zeros(np.shape(c)[0])))
+    #col = np.zeros(np.shape(c)[0])
+    #col = np.reshape(col, (np.shape(col)[0],1))
+    #c = np.hstack((c, col))
+    corr_condensed = distance.squareform(inv_corr)
+    z = linkage(corr_condensed, method='average')
+    plt.figure()
+    plt.title('Feature correlation dendrogram')
+    dendrogram(z, labels=labels, orientation='right', leaf_font_size=12)
+    plt.xlabel('Dissimilarity between feature clusters')
+    plt.ylabel('Feature names')
+    plt.show()
