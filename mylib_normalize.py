@@ -11,8 +11,9 @@ def normalize_rescale(data):
     min_data = np.min(abs(data))
     max_data = np.max(abs(data))
     range_data = max_data - min_data
-    data = [ ((abs(i) - min_data) / range_data) for i in data ]
+    data = [ ((i - min_data) / range_data) for i in data ]
     return np.array(data), min_data, max_data
+
 
 def normalize_mean(data):
     min_data = np.min(abs(data))

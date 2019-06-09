@@ -11,14 +11,16 @@ import copy
 import subprocess
 import os
 import pandas as pd
-import mylib_dataset as md
 import mylib_normalize as mn
 import mylib_TA as mta
-import mylib_blockchain as mb
-import talib 
+#import mylib_blockchain as mb
+#import talib 
 import datetime
 import calendar
 import pickle
+
+from sklearn import preprocessing
+import matplotlib.pyplot as plt
 
 
 #########
@@ -57,8 +59,114 @@ def parser(a):
             return a[(index1+2):index2]
         else:
             return a[(index1+1):index2]
-        
 
+def get_diff_raw(data_in, data, window):
+    X = []
+    Y = []
+    for i in range(len(data)-window):
+        X.append(data_in[i,:])
+        Y.append((np.mean(data[i+1:i+window+1]) - data[i])/data[i])
+        if(i<10):
+            print('...',window, data[i+1:i+window+1], data[i], data[i+window])
+            print(np.mean(data[i+1:i+window+1]), data[i], Y[-1])
+    return np.array(X), np.array(Y)
+
+def get_volatile_bool(data_in, data, window, target_movement = 'up', var_thresh_ratio = 0.5, apriori_window = 96):
+    X = []
+    Y = []
+    label_weights = []
+    cirbuf = np.zeros(apriori_window)
+    print('dbg ',target_movement, window)
+    for i in range(len(data)-window):
+        X.append(data_in[i,:])
+        cirbuf = np.hstack(((data[i] - data[i-1]) / data[i], cirbuf[:-1]))
+        var_thr = np.sqrt(np.var(cirbuf)) * var_thresh_ratio
+        if(target_movement == 'absolute'):
+            next_percentage_change = np.abs(np.mean(data[i+1:i+window+1]) - data[i]) / data[i]
+        else:
+            next_percentage_change = (np.mean(data[i+1:i+window+1]) - data[i]) / data[i]
+        if(target_movement == 'up'):
+            if(next_percentage_change >= var_thr):
+                Y.append(1)
+                label_weights.append(1 + next_percentage_change)
+            else:
+                Y.append(-1)
+                label_weights.append(1)
+        elif(target_movement == 'down'):
+            if(next_percentage_change <= -var_thr):
+                Y.append(1)
+                label_weights.append(1+next_percentage_change)
+            else:
+                Y.append(-1) 
+                label_weights.append(1)
+        elif(target_movement == 'absolute'):
+            if(next_percentage_change >= var_thr):
+                Y.append(1)
+                label_weights.append(1+next_percentage_change)
+            else:
+                Y.append(-1) 
+                label_weights.append(1)
+    return np.array(X), np.asarray(Y), np.array(label_weights)
+
+#def get_thr_trend(data_in, data, window):
+#    X = []
+#    Y = []
+#    timespan = 96
+#    cirbuf = np.zeros(timespan)
+#    for i in range(len(data)-window):
+#        X.append(data_in[i,:])
+#        cirbuf = np.hstack(((data[i] - data[i-1]) / data[i], cirbuf[:-1]))
+#        var_thr = np.sqrt(np.var(cirbuf))/2
+#        next_percentage_change = (np.mean(data[i+1:i+window+1]) - data[i]) / data[i]
+#        if(next_percentage_change >= var_thr):
+#            Y.append(1.0)
+#        else:
+#            Y.append(-1.0)
+#    return np.array(X), np.array(Y)
+##        
+#def get_labels_mean_window(data_in, data, window_length, label_type = '', thresh_ratio = 1.2):
+#    #in_data = data['dataset_dict']['close']
+#    dataX, dataY = [], []
+#    mean_lows = []
+#    mean_highs = []
+#    
+#    for i in range(len(data) - window_length):
+#        dataX.append(data_in[i,:])
+#        up = [abs(data[i+j] - data[i])  if data[i+j] >= data[i] else 0 for j in range(1,window_length+1)]
+#        down = [abs(data[i+j] - data[i])  if data[i+j] < data[i] else 0 for j in range(1,window_length+1)]
+#        mean_up = np.mean(up)
+#        mean_down = np.mean(down)
+#        if(label_type):
+#            if(label_type == 'bool_up'):
+#                dataY.append(str(mean_up > mean_down * thresh_ratio))
+#                #print('up:',up,'down:', down, 'meanup:', mean_up, 'meandown:',mean_down, 'y:', dataY[-1], 'i:',i)
+#            elif(label_type == 'bool_down'):
+#                dataY.append(str(mean_up * thresh_ratio < mean_down))
+#            elif(label_type == 'ternary'):
+#                if(mean_up > mean_down * thresh_ratio):
+#                    dataY.append('bull')
+#                elif (mean_up * thresh_ratio < mean_down):
+#                    dataY.append('bear')
+#                else:
+#                    dataY.append('crab')
+#            elif(label_type == 'ternary2'):
+#                if(data[i + window_length] > data[i] * thresh_ratio):
+#                    dataY.append('bull')
+#                elif (data[i + window_length] * thresh_ratio < data[i]):
+#                    dataY.append('bear')
+#                else:
+#                    dataY.append('crab')
+#            elif(label_type == 'raw'):
+#                dataY.append(data[i + window_length])
+#            elif(label_type == 'diff'):
+#                dataY.append(data[i + window_length] - data[i])
+#            else:
+#                print('Unknown label type: ', label_type)
+#        else:
+#            dataY.append( (mean_up, mean_down))
+#        mean_highs.append(mean_up)
+#        mean_lows.append(mean_down)
+#    return np.array(dataX), np.array(dataY), mean_highs, mean_lows
 def get_labels_mean_window(data_in, data, window_length, label_type = '', thresh_ratio = 1.2):
     #in_data = data['dataset_dict']['close']
     dataX, dataY = [], []
@@ -67,22 +175,53 @@ def get_labels_mean_window(data_in, data, window_length, label_type = '', thresh
     
     for i in range(len(data) - window_length):
         dataX.append(data_in[i,:])
-        up = [data[i+j] if data[i+j] >= data[i] else 0 for j in range(1,window_length+1)]
-        down = [data[i+j] if data[i+j] < data[i] else 0 for j in range(1,window_length+1)]
+        up = [abs(data[i+j] - data[i])  if data[i+j] >= data[i] else 0 for j in range(1,window_length+1)]
+        down = [abs(data[i+j] - data[i])  if data[i+j] < data[i] else 0 for j in range(1,window_length+1)]
         mean_up = np.mean(up)
         mean_down = np.mean(down)
         if(label_type):
             if(label_type == 'bool_up'):
-                dataY.append(str(mean_up > mean_down * thresh_ratio))
+                #dataY.append((data_in[i+window_length,0] - data_in[i,0])>0)
+                    
+                dataY.append((data_in[i+window_length,0] - data_in[i,0])>0)
+                if(i<20):
+                    print('i', i, 'win:', window_length, 'data[i]:',data[i],'data[i+win]:', data[i + window_length],'y:',dataY[-1]  )
+                #print('up:',up,'down:', down, 'meanup:', mean_up, 'meandown:',mean_down, 'y:', dataY[-1], 'i:',i)
             elif(label_type == 'bool_down'):
                 dataY.append(str(mean_up * thresh_ratio < mean_down))
             elif(label_type == 'ternary'):
-                if(mean_up > mean_down * thresh_ratio):
+                w_var = 16
+                if(i >= w_var):
+                    thr = np.sqrt(np.var(data[i-w_var:i]))
+                else:
+                    thr = 0
+                a = data[i+window_length]
+                b = data[i]
+                if((a > (b - thr)) and (a < (b + thr))):
+                    dataY.append('crab')
+                elif(a >= (b + thr)):
                     dataY.append('bull')
-                elif (mean_up * thresh_ratio < mean_down):
+                else:
+                    dataY.append('bear')
+                if((i<20) and (i>w_var)):
+                    print('i',i, 'thr', thr, 'a',a,'b',b,'b+-thr',(b+thr,b-thr),'y', dataY[-1]) 
+#                if(mean_up > mean_down * thresh_ratio):
+#                    dataY.append('bull')
+#                elif (mean_up * thresh_ratio < mean_down):
+#                    dataY.append('bear')
+#                else:
+#                    dataY.append('crab')
+            elif(label_type == 'ternary2'):
+                if(data[i + window_length] > data[i] * thresh_ratio):
+                    dataY.append('bull')
+                elif (data[i + window_length] * thresh_ratio < data[i]):
                     dataY.append('bear')
                 else:
                     dataY.append('crab')
+            elif(label_type == 'raw'):
+                dataY.append(data[i + window_length])
+            elif(label_type == 'diff'):
+                dataY.append(data[i + window_length] - data[i])
             else:
                 print('Unknown label type: ', label_type)
         else:
@@ -91,6 +230,28 @@ def get_labels_mean_window(data_in, data, window_length, label_type = '', thresh
         mean_lows.append(mean_down)
     return np.array(dataX), np.array(dataY), mean_highs, mean_lows
 
+#def get_labels_mean_window2(data_in, data, window_length, label_type = '', thresh_ratio = 1.2):
+#    #in_data = data['dataset_dict']['close']
+#    dataX, dataY = [], []
+#    mean_lows = []
+#    mean_highs = []
+#    
+##    d_open = data['open']
+##    d_close = data['open']
+##    d_open = data['open']
+##    d_open = data['open']
+#    for i in range(len(data) - window_length):
+#        dataX.append(data_in[i,:])
+#        thr = np.mean(data[i-20:i])
+#        if(data[i+1] > data[i] * thr):
+#            
+##    for i in range(len(data['high']) - window_length):
+##        dataX.append(data_in[i,:])
+##        dataY.append(str(np.sum(abs(data['high'][i:i+window_length] - np.repeat(data['close'][i],window_length))) \
+##                     >= np.sum(abs(data['low'][i:i+window_length] - np.repeat(data['close'][i],window_length)))))
+##   
+#    
+#    return np.array(dataX), np.array(dataY), mean_highs, mean_lows
 
 
 def get_date_from_UTC_ms(UTC_time):
@@ -100,7 +261,7 @@ def get_date_from_UTC_ms(UTC_time):
     date = date_datetime.isoformat()[:date_datetime.isoformat().find('T')]
     date_dict['date_str'] = date
     date_dict['date_datetime'] = date_datetime
-    print('UTC time:' + str(UTC_time) + ' --- date: ' + date)
+   # print('UTC time:' + str(UTC_time) + ' --- date: ' + date)
     return date_dict
 
 
@@ -111,8 +272,11 @@ def datetime_local_to_gmt_UTC(dt):
 def get_datetime_from_string(date_string):
     year = date_string[:date_string.find('-')]
     month = date_string[date_string.find('-'):][:date_string.find('-')].replace('-','')
-    day = date_string[date_string.find('-'):][date_string.find('-'):][:date_string.find('-')]
-    return datetime.datetime(int(year),int(month), int(day))
+    day = date_string[date_string.find('-'):][date_string.find('-'):][:date_string.find('-')][:2]
+    if(date_string.find(':') is not -1):
+        hour  = date_string[:date_string.find(':')][-2:]
+        minutes = date_string[date_string.find(':'):][1:3]
+    return datetime.datetime(int(year),int(month), int(day), int(hour), int(minutes))
 
 def get_data_interval(data_UTC, start_date, end_date):
     start_UTC_ms = datetime_local_to_gmt_UTC(start_date) * 1000
@@ -256,14 +420,84 @@ def bin_class_perf_indicators(results, reference, label_pos, label_neg):
 def print_dictionary(dictionary):
     for i in dictionary:
         print(i, ':', dictionary[i])
+
+def get_sentiment_indicators(dataset_path = '/home/catalin/databases/TA_SECURITY_SENTIMENT.csv',
+                             symbol = 'BTC',
+                             utc_data = None,
+                             dict_param = {}):
+    if(dict_param):
+        if('skip' in dict_param):
+            if(dict_param['skip'] == True):
+                return {}, 0 , 0
+    else:
+        return {}, 0 , 0
+        
+        
+    ### reshapes indicator by db timestamps
+    try:
+        dataset = pd.read_csv(dataset_path)
+    except:
+        print("Could not read file :", dataset_path)
+    
+    a = dataset.to_dict()
+    db_keys = list(a.keys())
+    vlen = len(list(a[db_keys[0]].values()))
+    
+    BTC_indexes = []
+    for i in range(vlen):
+        if(a['SYMBOL'][i] == symbol) and (a['TIME_INTERVAL'][i] == 'HOUR'):
+            BTC_indexes.append(i)
             
+    d_item = {}
+    for key in db_keys:
+        d_item[key] = []
+    for i in BTC_indexes:
+        for key in db_keys:
+            d_item[key].append(a[key][i])
+            
+    
+    
+    ########### match UTC vals
+    to_date = [datetime_local_to_gmt_UTC(get_datetime_from_string(i)) for i in list(d_item['DATE_TO'])]
+    vals = np.zeros(len(utc_data))
+    
+    k = 1
+    value = to_date[0]
+    to_len = len(to_date)
+    start, end = 0, 0
+    
+    return_keys = db_keys[6:-4] ## indicator keys
+    return_dict = {}
+    for i in return_keys:
+        return_dict[i] = np.zeros(len(utc_data))
+        
+    for i in range(len(utc_data)):
+        if(utc_data[i] >= to_date[0]):
+            if(not start):
+                start = i
+            if(utc_data[i] <  to_date[k]):
+                vals[i] = value
+                for j in return_keys:
+                    return_dict[j][i] = d_item[j][k]
+            else:
+                value = to_date[k]
+                vals[i] = value
+                for j in return_keys:
+                    return_dict[j][i] = d_item[j][k]
+                k += 1
+                if(k >= to_len):
+                    end = i
+                    break
+    ########### end match
+                
+    return return_dict, start, end
 
 def get_dataset_multiple_csv(dataset_directory):
     print("Fetching data from ", dataset_directory, '...')
 #    dictionary = ['UTC', 'open', 'close', 'high', 'low', 'volume']    
     os.chdir(dataset_directory)
     x = subprocess.check_output(' ls | wc -l',shell = 'True')
-    x = int(md.parser(str(x)))
+    x = int(parser(str(x)))
         
     if(x == 0):
         print('No files found!')
@@ -317,6 +551,26 @@ def fill_missing_data(whole_dataset):
             whole_dataset[i] = whole_dataset[i-1]
             whole_dataset[i][0] += 900000        
     return whole_dataset
+
+def fill_missing_data2(whole_dataset):
+    data = []
+    cnt_missing_candles = 0
+    for i in range (len(whole_dataset)):
+        if(i>0):
+            diff = whole_dataset[i][0] - whole_dataset[i-1][0]
+            if(diff > 900000):
+                #print('dbg diff missing utc',diff, 'start', whole_dataset[i-1][0],'end',whole_dataset[i][0], 'candles', int(diff / 900000))
+                tmp = whole_dataset[i-1]
+                for j in range(int(diff / 900000)-1):
+                    tmp[0] = tmp[0] + 900000
+                   # print('adding', tmp[0])
+                    data.append(tmp)
+                    cnt_missing_candles += 1
+            data.append(whole_dataset[i])
+        else:
+            data.append(whole_dataset[i])
+    print('cnt missing candles', cnt_missing_candles)
+    return np.array(data)
         
 def get_database_data(dataset_directory, 
                       normalization_method = 'rescale',
@@ -341,16 +595,18 @@ def get_database_data(dataset_directory,
     dictionary = ['UTC', 'open', 'close', 'high', 'low', 'volume']   
     print('Dataset features:',
           '\n\t', dictionary)
-    
+    print('path:', dataset_directory)
     if(dataset_type == 'dataset1'): 
         whole_dataset = get_dataset_multiple_csv(dataset_directory)
     elif(dataset_type == 'dataset2'):
-        whole_dataset = get_dataset_single_csv()
+        whole_dataset = get_dataset_single_csv(dataset_directory)
     else:
         print('Unknown dataset type')
     
     whole_dataset = fill_missing_data(whole_dataset)
+#    whole_dataset = fill_missing_data2(whole_dataset)
     ############# 
+
     if(np.shape(whole_dataset)[0] == 0):
         print('Could not get data. Aborting..')
         return {}
@@ -370,6 +626,7 @@ def get_database_data(dataset_directory,
     print('\nmost recent candle:', whole_dataset[-1,0], get_date_from_UTC_ms(whole_dataset[-1,0])['date_datetime'])
     ### preprocess
     if(preproc_constant):
+        print('Preprocessing..')
         lam = preproc_constant
         for i in range(1,X.shape[0]):
             for j in range(X.shape[1]):
@@ -377,24 +634,29 @@ def get_database_data(dataset_directory,
         #### end preprocess
 
     if(normalization_method == "rescale"):
-        X_norm_prices, min_prices, max_prices = mn.normalize_rescale(X[:,0:4])
-        X_norm_volume, min_volume, max_volume = mn.normalize_rescale(X[:,4])
+        print('Norming rescale..')
+        X[:,0:4], min_prices, max_prices = mn.normalize_rescale(X[:,0:4])
+        X[:,4], min_volume, max_volume = mn.normalize_rescale(X[:,4])
+
         
-    if(normalization_method == "standardization"):
-        from sklearn import preprocessing
-        scaler = preprocessing.StandardScaler()
-        X = scaler.fit_transform(X)
+#    if(normalization_method == "standardization"):
+#        print('Norming standarzation..')
+#        from sklearn import preprocessing
+#        scaler = preprocessing.StandardScaler()
+#        X = scaler.fit_transform(X)
       
     if(input_noise_debug):
         print("input_noise_debug active. Replacing data with noise..")
         X = np.random.random(np.shape(X))
     
-    dict_data = {'raw_dict': dataset_dict, 'X': X}
+    dict_data = {'raw_dict': dataset_dict, 'X': X, 'raw_data': whole_dataset[:,1:], 'UTC':  whole_dataset[:,0]}
     print('\nDB dataset shape:', whole_dataset.shape)
     print('returning dataset dictionary with keys:',
           '\n\t',dict_data.keys(),
           "\n\t'raw_dict' -> ",dataset_dict.keys(),
-          "\n\t'X' -> concatenated ochlv"
+          "\n\t'X' -> concatenated ochlv",
+          "\n\t'raw_data' -> concatenated ochlv unprocessed"
+          "\n\t'UTC' -> UTC timestamps"
           '\n')
 
     return dict_data
@@ -425,7 +687,8 @@ def append_ohclv_features(candle_data, feature_dicts):
     return dict_ohclv
         
 
-def get_features(candle_data, feature_dicts, blockchain_indicators_dicts, lookback = None, normalization = None):        
+def get_features(candle_data, feature_dicts, blockchain_indicators_dicts, lookback = None, normalization = None, utc_time = None, reshape = None, 
+                 dataset_path_sentiment = None):        
         
     dict_features = {}
     X = []
@@ -457,7 +720,7 @@ def get_features(candle_data, feature_dicts, blockchain_indicators_dicts, lookba
     if(dict_MFI):
         dict_features.update(dict_MFI)
             
-    dict_ATR = mta.ATR(close_prices, high_prices, low_prices, feature_dicts['ATR'])
+    dict_ATR = mta.ATR2(close_prices, high_prices, low_prices, feature_dicts['ATR'])
     if(dict_ATR):
         dict_features.update(dict_ATR)
         
@@ -512,29 +775,90 @@ def get_features(candle_data, feature_dicts, blockchain_indicators_dicts, lookba
     if(dict_var):
         dict_features.update(dict_var)
         
+    dict_adx = mta.ADX(close_prices, high_prices, low_prices, feature_dicts['ADX'])
+    if(dict_adx):
+        dict_features.update(dict_adx)
+        
+    dict_ema = mta.EMA(close_prices, feature_dicts['EMA'])
+    if(dict_ema):
+        dict_features.update(dict_ema)
+    
+    dict_VEMA = mta.EMA(volume, feature_dicts['volume_EMA'], identifier = 'volume')
+    if(dict_VEMA):
+        dict_features.update(dict_VEMA)
+    
+    dict_FRLS = mta.FRLS(close_prices, feature_dicts['FRLS'])
+    if(dict_FRLS):
+        dict_features.update(dict_FRLS)
+
+    dict_OBV = mta.OBV(close_prices, volume, feature_dicts['OBV'])
+    if(dict_OBV):
+        dict_features.update(dict_OBV)
+
+    dict_STO = mta.STO(close_prices, high_prices, low_prices, feature_dicts['STO'])
+    if(dict_STO):
+        dict_features.update(dict_STO)
+
+    dict_TRIX = mta.TRIX(close_prices, feature_dicts['TRIX'])
+    if(dict_TRIX):
+        dict_features.update(dict_TRIX)
+
+    dict_my_diff = mta.my_diff(close_prices, feature_dicts['MD'])
+    if(dict_my_diff):
+        dict_features.update(dict_my_diff)
+ 
+    dict_ohcl_diff = mta.ohcl_diff(open_prices, close_prices, high_prices, low_prices, feature_dicts['ohcl_diff'])
+    if(dict_ohcl_diff):
+        dict_features.update(dict_ohcl_diff)
+        
+    dict_sentiment_db, start_utc, end_utc = get_sentiment_indicators(dataset_path = dataset_path_sentiment,
+                                                                     symbol = 'BTC',
+                                                                     utc_data = np.multiply(utc_time, 1/1000),
+                                                                     dict_param =  feature_dicts['SENT'])
+    
+    dict_peaks = mta.thresholding_algo(close_prices, 50, 5, 0.9, feature_dicts['peaks'])
+    if(dict_peaks):
+        dict_features.update(dict_peaks)
+    print('start',start_utc, end_utc)
+    if(dict_sentiment_db):
+        dict_features.update(dict_sentiment_db)
+            
     index = 0
     X = np.zeros((len(open_prices), len(dict_features)))
     for key in dict_features:
-        X[:,index] = dict_features[key]
+        tmp = np.reshape(dict_features[key], len(dict_features[key]))
+        X[:,index] = tmp
         index += 1
     if(lookback):
-        X = get_lookback_data(X, lookback)    
+        X = get_lookback_data(X, lookback)  
+    if(reshape):
+        X = X[reshape['start'] : reshape['end'], :]
     
-#    if(normalization == 'standardization'):
-##        
-##        from sklearn import preprocessing
-##        scaler = preprocessing.StandardScaler()
-##        for i in range(np.shape(X)[1]):
-##            X[:,i] = X[:,i] / np.linalg.norm(X[:,i])
+    if(normalization == 'standardization'):        
+        scaler = preprocessing.StandardScaler()
+        scaler.fit(X)
+        X = scaler.transform(X)
+    elif(normalization == 'minmax'):
+        scaler = preprocessing.MinMaxScaler()
+        scaler.fit(X)
+        X = scaler.transform(X)
+    else:
+        scaler = None
+#        for i in range(np.shape(X)[1]):
+#            X[:,i] = X[:,i] / np.linalg.norm(X[:,i])
     return_dataset = {}
     return_dataset['data'] = X
     return_dataset['features'] = dict_features
+    return_dataset['scaler'] = scaler
+    return_dataset['UTC'] = utc_time
+    
     
     print('Feature matrix shape:', X.shape)
     print('returning feature dictionary with keys:',
           '\n\t',return_dataset.keys(),
           "\n\t'data' -> ", 'concatenated features',
           "\n\t'features' -> feature dictionary"
+          "\n\t'UTC' -> utc_time"
           '\n')
 
     return return_dataset
@@ -572,8 +896,8 @@ def get_test_and_train_data(preprocessed_data, unprocessed_data, chunks, chunks_
     if((remove_chunks_from_start + chunks_for_training) > chunks):
         print("Invalid chunk values")
         return 0
-    X_chunks = md.get_split(preprocessed_data,chunks)
-    X_chunks_unprocessed = md.get_split(unprocessed_data,chunks)
+    X_chunks = get_split(preprocessed_data,chunks)
+    X_chunks_unprocessed = get_split(unprocessed_data,chunks)
     if(cross_validation):
         dict_data = cross_val_data_split(X_chunks, X_chunks_unprocessed, cross_validation)
     else:        
@@ -682,3 +1006,97 @@ def myalarm(path = ''):
     mixer.music.play()
     time.sleep(6)
     mixer.music.stop()
+    
+    
+def get_volatile_bool_debug(test_train_data,predictions, data, window, target_movement, var_thresh_ratio = 0.5, plot_predictions = True):
+    Y = []
+    timespan = 96
+    cirbuf = np.zeros(timespan)
+    for i in range(len(data)-window):
+        cirbuf = np.hstack(((data[i] - data[i-1]) / data[i], cirbuf[:-1]))
+        var_thr = np.sqrt(np.var(cirbuf)) * var_thresh_ratio
+#        next_percentage_change = (np.mean(data[i+1:i+window+1]) - data[i]) / data[i]
+#        if(next_percentage_change >= var_thr):
+#            Y.append([1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+#        else:
+#            Y.append([-1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+        if(target_movement == 'absolute'):
+            next_percentage_change = np.abs(np.mean(data[i+1:i+window+1]) - data[i]) / data[i]
+        else:
+            next_percentage_change = (np.mean(data[i+1:i+window+1]) - data[i]) / data[i]
+            
+        if(target_movement == 'up'):
+            if(next_percentage_change >= var_thr):
+                Y.append([1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+            else:
+                Y.append([-1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+        elif(target_movement == 'down'):
+            if(next_percentage_change <= -var_thr):
+                Y.append([1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+            else:
+                Y.append([-1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+        elif(target_movement == 'absolute'):
+            if(next_percentage_change >= var_thr):
+                Y.append([1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+            else:
+                Y.append([-1.0, next_percentage_change, np.mean(data[i+1:i+window+1]), var_thr])
+    xx = np.array(Y)    
+
+    x = test_train_data['X_test'][:,1]
+    y_dict = dict(pred = xx[:,0],
+                  per_change = xx[:,1],
+                  mean = xx[:,2],
+                  var_thr =  xx[:,3])
+    plt.figure()
+    plt.title('Etichetarea volatilităţii\n Lungimea ferestrei apriori = '+ str(timespan) +' eşantioane, \n Lungimea ferestrei aposteriori = '+ str(window) +' eşantioane, \n Factorul de scalare = '+str(var_thresh_ratio))
+    plt.plot(y_dict['per_change'], label = 'media aposteriori raportată la preţul curent')
+    plt.plot(np.multiply(y_dict['pred'], 1/100), label = 'eticheta asociată predicţiei')
+    plt.plot(y_dict['var_thr'], label = 'varianţa apriori')
+    plt.legend(loc = 'best')
+    plt.xlabel('Timp')
+    plt.ylabel('Amplitudine')
+    plt.show()
+    
+    plt.figure()
+    plt.title('Etichetarea volatilităţii: Valoarea medie aposteriori\n Lungimea ferestrei apriori = '+ str(timespan) +' eşantioane, \n Lungimea ferestrei aposteriori = '+ str(window) +' eşantioane, \n Factorul de scalare = '+str(var_thresh_ratio))
+    plt.plot(x, label = 'Preţul real')
+    plt.plot(y_dict['mean'], label = 'Valoarea medie aposteriori a preţului')
+    plt.xlabel('Timp')
+    plt.ylabel('Preţ')
+    plt.legend(loc = 'best')
+    plt.show()
+    
+    plt.figure()
+    plt.title('Etichetarea volatilităţii: varianţa apriori.\n Lungimea ferestrei apriori = '+ str(timespan) +' eşantioane, \n Lungimea ferestrei aposteriori = '+ str(window) +' eşantioane, \n Factorul de scalare = '+ str(var_thresh_ratio))
+    plt.plot(x, label = 'Preţul real')
+    plt.plot(np.multiply(y_dict['var_thr'],100000) + 3000, label = 'Varianţa apriori a preţului (scalată)')
+    plt.xlabel('Timp')
+    plt.ylabel('Preţ')
+    plt.legend(loc = 'best')
+    plt.show()
+    
+    #cir_buf_label = np.array(y_dict['pred'])
+    #for i in range(12):
+    #    cir_buf_label = np.hstack((0,cir_buf_label[:-1]))
+    #taget_prices = [x[i] if(cir_buf_label[i] > 0) else None for i in range(len(cir_buf_label))]
+    
+    taget_prices = np.zeros(len(y_dict['pred']))
+    for i in range(len(y_dict['pred'])):
+        if(y_dict['pred'][i] > 0):
+            taget_prices[i:i+window] = 1
+    taget_prices = [x[i] if(taget_prices[i] > 0) else None for i in range(len(taget_prices))]
+            
+    mean_x = np.mean(x)
+    plt.figure()
+    plt.title('Etichetarea volatilităţii.\n Lungimea ferestrei apriori = '+ str(timespan) +' eşantioane, \n Lungimea ferestrei aposteriori = '+ str(window) +' eşantioane, \n Factorul de scalare = '+ str(var_thresh_ratio))
+    plt.plot(x, label = 'Preţul real')
+    plt.plot(np.multiply(y_dict['pred'], mean_x/12) + mean_x, label = 'Valoarea etichetei (scalată)')
+    if(plot_predictions):
+        plt.plot(np.multiply(predictions, mean_x/12) + mean_x, label = 'Valoarea predicţiei (scalată)')
+    plt.plot(taget_prices, label = "Preţul 'ţintâ'", color = 'r')
+    plt.xlabel('Timp')
+    plt.ylabel('Preţ')
+    plt.legend(loc = 'best')
+    plt.show()
+    #for i in range(len(x)):
+    #    

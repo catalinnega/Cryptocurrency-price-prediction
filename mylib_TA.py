@@ -5,8 +5,8 @@ Created on Sun Jun 24 01:08:14 2018
 @author: catalin
 """
 import numpy as np
-import talib
-import math
+#import talib
+#import math
 import pickle
 from datetime import timedelta, date
 import mylib_dataset as md
@@ -167,12 +167,13 @@ def Ichimoku_Cloud_Indicator(dataset_dict, param_dict):
         cross_under_Tenkan = [1 if (Tenkan_sen[i] < Kijun_sen[i] and Tenkan_sen[i-1] >= Kijun_sen[i-1]) else 0 for i in range(len(dataset_dict['close']))]
            ### flat_kumo_flags ## in progress
         
+        print(time_span_Tenkan)
         dict_results = { 'Tenkan_sen_' + str(time_span_Tenkan): np.array(Tenkan_sen),
                          'Kijun_sen_'+ str(time_span_Kijun): np.array(Kijun_sen),
                          'Senkou_Span_A_' + str(displacement): np.array(Senkou_Span_A),
                          'Senkou_Span_B_' + str(time_span_Span_B): np.array(Senkou_Span_B),
                          'Chikou_Span_' + str(displacement_Chikou): np.array(Chikou_Span),
-                        } 
+                        }
         if(param_dict['flag_decay_span']):
             close_over_cloud = apply_linear_decay_flags(close_over_cloud, span = flag_decay_span)
             close_under_cloud = apply_linear_decay_flags(close_under_cloud, span = flag_decay_span)
@@ -189,7 +190,16 @@ def Ichimoku_Cloud_Indicator(dataset_dict, param_dict):
                                 'cross_over_Tenkan_' + str(i): np.array(cross_over_Tenkan),
                                 'cross_under_Tenkan_' + str(i): np.array(cross_under_Tenkan)
                                 })
-        dict_return.update(dict_results)                    
+            
+        if(not param_dict['specify_features']['skip']):
+            feat_dict = param_dict['specify_features']['features']
+            for i in feat_dict:
+                feat = feat_dict[i]
+                key = feat['key'] +'_' + str(feat['value'])
+                values = dict_results[key]
+                dict_return.update({key : values})
+        else:
+            dict_return.update(dict_results)                    
     return dict_return
 
 
@@ -330,7 +340,7 @@ def SMA_EMA(close_prices, param_dict):
            return {}
     
     dict_return = {}
-    for periods in param_dict['periods']:
+    for periods in (param_dict['periods'],):
         SMA = 0
         SMA_values = []
         EMA_values = []
@@ -359,8 +369,9 @@ def MACD(close_prices, param_dict):
            return {}
     
     dict_return = {}
-    for (ema_26_period, ema_12_period) in param_dict['period_pair']:
-        dict_SMA_EMA = SMA_EMA(close_prices, {'periods': (ema_26_period, ema_12_period)})
+    print(param_dict['period_pair'])
+    for (ema_26_period, ema_12_period, ema_9_period) in (param_dict['period_pair'],):
+        dict_SMA_EMA = SMA_EMA(close_prices, {'periods': [ema_26_period, ema_12_period]})
     
         EMA_26_day_values = dict_SMA_EMA['EMA_' + str(ema_26_period)]
         EMA_12_day_values = dict_SMA_EMA['EMA_' + str(ema_12_period)]
@@ -369,17 +380,17 @@ def MACD(close_prices, param_dict):
             MACD_line[i] = EMA_12_day_values[i] - EMA_26_day_values[i]
             if(MACD_line[i] > 10):
                 MACD_line[i] = 0
-        dict_SMA_EMA = SMA_EMA(MACD_line, {'periods': [9]})
-        EMA_9_day_MACD = dict_SMA_EMA['EMA_9']
+        dict_SMA_EMA = SMA_EMA(MACD_line, {'periods': [ema_9_period]})
+        EMA_9_day_MACD = dict_SMA_EMA['EMA_'+str(ema_9_period)]
         MACD_histogram = [MACD_line[i] - EMA_9_day_MACD[i] for i in range(len(EMA_9_day_MACD))]
         
         ## get divergences
 #        divergence_values = 0
         dict_MACD = {
-                     'MACD_line_' + str(ema_26_period)+ '_' + str(ema_12_period) : MACD_line,
-                     'MACD_line_' + str(ema_26_period)+ '_' + str(ema_12_period): np.array(MACD_line),
-                     'MACD_signal_line_' + str(ema_26_period)+ '_' + str(ema_12_period): np.array(EMA_9_day_MACD),
-                     'MACD_histogram_' + str(ema_26_period)+ '_' + str(ema_12_period): np.array(MACD_histogram)
+                     'MACD_line_' + str(ema_26_period)+ '_' + str(ema_12_period)+ '_' + str(ema_9_period): MACD_line,
+                     'MACD_line_' + str(ema_26_period)+ '_' + str(ema_12_period)+ '_' + str(ema_9_period): np.array(MACD_line),
+                     'MACD_signal_line_' + str(ema_26_period)+ '_' + str(ema_12_period)+ '_' + str(ema_9_period): np.array(EMA_9_day_MACD),
+                     'MACD_histogram_' + str(ema_26_period)+ '_' + str(ema_12_period)+ '_' + str(ema_9_period): np.array(MACD_histogram)
                      }
         dict_return.update(dict_MACD)
 #        divergence_values : np.array(divergence_values)
@@ -391,8 +402,8 @@ def stochastic_RSI(RSI_values, param_dict):
            return {}
     
     dict_stoch_RSI = {}
-    stoch_RSI_period = param_dict['stoch_RSI']['period']
-    for days in param_dict['days']:
+    stoch_RSI_period = param_dict['stoch_RSI']['periods']
+    for days in param_dict['periods']:
         stochastic_RSI_values = []
         cirbuf_RSI = np.zeros(stoch_RSI_period)
         for i in range(len(RSI_values)):
@@ -413,7 +424,7 @@ def RSI(close_prices, param_dict):
            return {}
     
     dict_RSI = {}
-    for days in param_dict['days']:       
+    for days in (param_dict['periods'],):       
         time_window = days * 4 * 24 ## scale from 15 min to 1 day
         k = 2 / (days + 1) ## EMA factor
         RSI = [0]
@@ -433,7 +444,7 @@ def RSI(close_prices, param_dict):
                 EMA_gain = (gain - EMA_gain) * k + EMA_gain
                 EMA_loss = (loss - EMA_loss) * k + EMA_loss
     
-            if(EMA_loss == 0):
+            if(EMA_loss < 0.00000001):
                 RSI.append(100)
             else:          
                 RS = EMA_gain / EMA_loss
@@ -543,7 +554,7 @@ def money_flow_index(close_prices, high_prices, low_prices, volume, param_dict):
            return {}
     
     dict_MFI = {}
-    for time_frame in param_dict['timeframes']:
+    for time_frame in (param_dict['periods'],):
         diff_circular_buffer_pos = np.zeros(time_frame)
         diff_circular_buffer_neg = np.zeros(time_frame)
         MFI_values = []
@@ -647,7 +658,8 @@ def bollinger_bands(close_prices, param_dict):
            return {}
     
     dict_return = {}
-    for time_period in param_dict['periods']:
+    dict_results = {}
+    for time_period in (param_dict['periods'],):
         sample_circular_buffer = np.zeros(time_period)
         SMA_values = []
         upperline_values = []
@@ -676,14 +688,23 @@ def bollinger_bands(close_prices, param_dict):
                         SMA_crossings.append(-1)
                     else:
                         SMA_crossings.append(0)
-    
-        dict_return.update({
-                            'SMA_values_' + str(time_period): np.array(SMA_values),
-                            'upperline_values_' + str(time_period): np.array(upperline_values),
-                            'lowerline_values_' + str(time_period): np.array(lowerline_values),
-                            'squeeze_values_' + str(time_period): np.array(squeeze_values),
-                            'SMA_crossings_' + str(time_period): np.array(SMA_crossings)
+        dict_results.update({
+                                'BB_SMA_' + str(time_period): np.array(SMA_values),
+                                'BB_upperline_' + str(time_period): np.array(upperline_values),
+                                'BB_lowerline_' + str(time_period): np.array(lowerline_values),
+                                'BB_squeeze_' + str(time_period): np.array(squeeze_values),
+                                'BB_SMA_crossings_' + str(time_period): np.array(SMA_crossings)
                             })
+            
+        if(not param_dict['specify_features']['skip']):
+            feat_dict = param_dict['specify_features']['features']
+            for i in feat_dict:
+                feat = feat_dict[i]
+                key = feat['key'] +'_' + str(feat['value'])
+                values = dict_results[key]
+                dict_return.update({key : values})
+        else:
+            dict_return.update(dict_results)
     return dict_return 
 
     
@@ -694,7 +715,7 @@ def commodity_channel_index(close_prices, high_prices, low_prices, param_dict):
     
     dict_return = {}
     constant = param_dict['constant']
-    for time_period in param_dict['periods']:
+    for time_period in (param_dict['periods'],):
         typical_price_circular_buffer = np.zeros(time_period)
         CCI_values = []
 #        CCI_threshold_values = []
@@ -747,6 +768,9 @@ def slope_split_points(X, slope_window = 2, lam_att = 0.5, slope_diff = 0.051, c
     return split_points
 
 def get_threshold_flags(data_dict, dict_features):
+    if('skip' in dict_features):
+        if(dict_features['skip']):
+           return {}
     upper_thresh = dict_features['upper_thresh']
     lower_thresh = dict_features['lower_thresh']
     lam = dict_features['lam']
@@ -843,11 +867,17 @@ def VBP(close_prices, volume, param_dict):
                     VBP.append(0)
                     slope_VBP.append(0)
                     slope_VPB_smooth.append(0)
-        dict_return.update({
-                            'VBP_' + str(bins): np.array(VBP),
-                            'slope_VBP_' + str(bins): np.array(slope_VBP),
-                            'slope_VPB_sm_' + str(bins): np.array(slope_VPB_smooth),
-                            })
+        if(lam):
+            dict_return.update({
+                                'VBP_' + str(bins): np.array(VBP),
+                                'slope_VBP_' + str(bins): np.array(slope_VBP),
+                                'slope_VPB_sm_' + str(bins): np.array(slope_VPB_smooth),
+                                })
+        else:
+            dict_return.update({
+                                'VBP_' + str(bins): np.array(VBP),
+                                'slope_VBP_' + str(bins): np.array(slope_VBP),
+                                })
     return dict_return
 
 
@@ -859,7 +889,7 @@ def NLMS_indicator(close, param_dict):
 
     dict_return = {}
     lam = param_dict['smoothing']
-    for (time_period, nlms_step, nlms_constant) in param_dict['params']:    
+    for (time_period, nlms_step, nlms_constant, tau) in param_dict['params']:    
         sample_circular_buffer = np.zeros(time_period)
         nlms_filter = np.zeros(time_period)
         nlms_indicator = []
@@ -868,6 +898,11 @@ def NLMS_indicator(close, param_dict):
              sample_circular_buffer = np.hstack((close[i], sample_circular_buffer[:-1]))
              filter_output = nlms_filter.dot(sample_circular_buffer.T)
              error = close[i] - filter_output 
+             if(tau):
+                 if(abs(error) > tau): 
+                    nlms_step = 1 - (tau / abs(error))
+                 else:
+                    nlms_step = 0
              nlms_filter = nlms_filter + nlms_step * error * sample_circular_buffer / \
                          (sample_circular_buffer.T.dot(sample_circular_buffer) + nlms_constant)
              nlms_indicator.append(error)
@@ -877,12 +912,14 @@ def NLMS_indicator(close, param_dict):
                  else:
                      nlms_smoothed_indicator.append(nlms_smoothed_indicator[-1] * lam + (1-lam) * nlms_indicator[-1])
             
-        dict_return.update({'nlms_' + str(time_period) + '_' + str(nlms_step) + '_' + str(nlms_constant): np.array(nlms_indicator)})
+        dict_return.update({'nlms_' + str(time_period) + '_' + str(nlms_step) + '_' + str(nlms_constant)+ '_' + str(tau): np.array(nlms_indicator)})
         if(lam):
             dict_return.update({
-                                'nlms_s_' + str(time_period) + '_' + str(nlms_step) + '_' + str(nlms_constant): np.array(nlms_smoothed_indicator)
+                                'nlms_s_' + str(time_period) + '_' + str(nlms_step) + '_' + str(nlms_constant) + '_' + str(tau): np.array(nlms_smoothed_indicator)
                                })
     return dict_return
+
+
 
 def RLS_indicator(close, time_period = 128, lam = 0.9, delta = 1, smoothing = 0.9, dct_transform = False, feature_names = ['rls_indicator_error']):
     user_input_tags = ['rls_indicator_error', 'rls_indicator_output', 'rls_smoothed_indicator']
@@ -929,10 +966,15 @@ def ATR(close, high, low, param_dict):
            return {}
     
     dict_return = {}
-    for time_frame in param_dict['timeframes']:
+    for time_frame in (param_dict['periods'],):
         ATR_EMA = []
         ATR_EMA_Wilder = []
-        lam_EMA = 2 / (time_frame + 1)
+        print(time_frame)
+        try:
+            lam_EMA = 2 / (time_frame + 1)
+        except:
+            time_frame = time_frame[0]
+            lam_EMA = 2 / (time_frame + 1)
         lam_Wilder = 1 / time_frame
         for i in range(len(close)):
                 a1 = high[i] - low[i]
@@ -945,17 +987,52 @@ def ATR(close, high, low, param_dict):
                 else:
                     ATR_EMA.append(lam_EMA * TR + (1 - lam_EMA) * ATR_EMA[-1])
                     ATR_EMA_Wilder.append(lam_Wilder * TR + (1 - lam_Wilder) * ATR_EMA[-1])
+                    
+        if(param_dict['method']['standard']):
+            dict_return.update({'ATR_EMA_' + str(time_frame): np.array(ATR_EMA)})
+            
+        if(param_dict['method']['Wilder']):
+            dict_return.update({'ATR_EMA_Wilder_' + str(time_frame): np.array(ATR_EMA_Wilder)})
+            
+    return dict_return
+
+def ATR2(close, high, low, param_dict): 
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}
+    
+    dict_return = {}
+    for time_frame in (param_dict['periods'],):
+        ATR_EMA = [0]
+        ATR_EMA_Wilder = [0]
+        print(time_frame)
+        lam_EMA = 2 / (time_frame + 1)
+        lam_Wilder = 1 / time_frame
+        for i in range(1,len(close)):
+                a1 = high[i] - low[i]
+                a2 = abs(high[i] - close[i-1])
+                a3 = abs(low[i] - close[i-1])
+                TR = max(a1,a2,a3)
+                if(i == 0):
+                    ATR_EMA.append(TR)
+                    ATR_EMA_Wilder.append(TR)
+                else:
+                    ATR_EMA.append(lam_EMA * TR + (1 - lam_EMA) * ATR_EMA[-1])
+                    ATR_EMA_Wilder.append(lam_Wilder * TR + (1 - lam_Wilder) * ATR_EMA[-1])
         dict_return.update({'ATR_EMA_' + str(time_frame): np.array(ATR_EMA),
                             'ATR_EMA_Wilder_' + str(time_frame): np.array(ATR_EMA_Wilder)})
     return dict_return
+            
+            
 
+        
 def Chaikin_money_flow(close, high, low, volume, param_dict):
     if('skip' in param_dict):
         if(param_dict['skip']):
            return {}
     
     dict_return = {}
-    for time_period in param_dict['periods']:
+    for time_period in (param_dict['periods'],):
         MF_volume_circular_buffer = np.zeros(time_period)
         volume_circular_buffer = np.zeros(time_period)
         CMF = []
@@ -1013,10 +1090,10 @@ def plot_dendrogram(data, labels):
     corr_condensed = distance.squareform(inv_corr)
     z = linkage(corr_condensed, method='average')
     plt.figure()
-    plt.title('Feature correlation dendrogram')
-    dendrogram(z, labels=labels, orientation='right', leaf_font_size=12)
-    plt.xlabel('Dissimilarity between feature clusters')
-    plt.ylabel('Feature names')
+    plt.title('Dendrograma corelaţiei variabilelor')
+    dendrogram(z, labels=labels, orientation='right', leaf_font_size=8)
+    plt.xlabel('Gradul de decorelare între grupuri de variabile')
+    plt.ylabel('Numele variabilelor')
     plt.show()
 
 def snr(close, param_dict):
@@ -1024,7 +1101,7 @@ def snr(close, param_dict):
         if(param_dict['skip']):
            return {}
     
-    window_length = param_dict['period']
+    window_length = param_dict['periods']
     buffer = np.zeros(window_length)
     S = 1
     nsr = []
@@ -1048,7 +1125,7 @@ def snr(close, param_dict):
 #    for i in range(len(nsr)):
 #        nsr[i] = nsr[i] / maxv
     
-    return {'nsr' : np.array(nsr)}
+    return {'nsr_'+str(window_length) : np.array(nsr)}
 
 def previous_mean(close, param_dict):
     if('skip' in param_dict):
@@ -1079,3 +1156,372 @@ def previous_var(close, param_dict):
             means.append(np.var(buffer))
         dict_return.update({'var_' + str(window_length) : np.array(means)})
     return dict_return
+
+
+def ADX(close, high, low, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}
+    
+    dict_return = {}
+    for time_frame in (param_dict['periods'],):
+        ATR = [0]
+        buf_ATR = np.zeros(time_frame)
+#        buf_DM_p = np.zeros(time_frame)
+#        buf_DM_n = np.zeros(time_frame)
+        TR, DM_p, DM_n = 0, 0, 0
+        DI_pos, DI_neg, ADX = [], [], []
+        ema_ct = 2/(time_frame + 1)
+        DI_p, DI_n, DX = 0, 0, 0
+        sum_pos, sum_neg, sum_a = [], [], []
+        for i in range(0,len(close)):
+            if(i>0):
+                a1 = high[i] - low[i]
+                a2 = abs(high[i] - close[i-1])
+                a3 = abs(low[i] - close[i-1])
+                TR = max(a1,a2,a3)
+                DM_p = high[i] - high[i-1]
+                DM_n = low[i-1] - low[i]
+#                tmp_DM_p = DM_p
+#                tmp_DM_n = DM_n
+                if( 0 < DM_p > DM_n):
+                    pdm = DM_p
+                else:
+                    pdm = 0
+                if( 0 < DM_n > DM_p):
+                    ndm = DM_n
+                else:
+                    ndm = 0
+#                DM_p = tmp_DM_p
+#                DM_n = tmp_DM_n
+            buf_ATR = np.hstack((TR, buf_ATR[:-1]))
+            ATR = np.sum(buf_ATR)/time_frame
+            
+            if(ATR> 0.000000001):
+                pos_rt = ndm / ATR
+                neg_rt = pdm / ATR
+            else:
+                pos_rt = 0
+                neg_rt = 0
+                
+            if(i < time_frame):
+                DI_p = 0
+                DI_n = 0
+                sum_pos.append(pos_rt)
+                sum_neg.append(neg_rt)
+            elif(i == time_frame):
+                sma_pos = np.sum(np.array(sum_pos)) / time_frame
+                sma_neg = np.sum(np.array(sum_neg)) / time_frame
+                DI_p = (pos_rt - sma_pos) * ema_ct + DI_p
+                DI_n = (neg_rt - sma_neg) * ema_ct + DI_n
+            else:
+                DI_p = (pos_rt - DI_p) * ema_ct + DI_p
+                DI_n = (neg_rt - DI_n) * ema_ct + DI_n
+                
+                if(i < time_frame * 2):
+                    sum_di = abs(DI_p + DI_n)
+                    if(sum_di > 0.00001):
+                        adx_rt = abs(DI_p - DI_n) / sum_di
+                    else:
+                        adx_rt = 0
+                    sum_a.append(adx_rt)
+                elif(i == time_frame * 2):
+                     DX = (np.sum(sum_a)/time_frame - DX) * ema_ct + DX
+                else:
+                    sum_di = abs(DI_p + DI_n)
+                    if(sum_di > 0.00001):
+                        adx_rt = abs(DI_p - DI_n) / sum_di
+                    else:
+                        adx_rt = 0
+                    DX = (adx_rt - DX) * ema_ct + DX
+            
+            DI_pos.append(100 * DI_p)
+            DI_neg.append(100 * DI_n)
+            ADX.append(100 * DX)
+            
+                    
+        dict_return.update({
+                           'DI_pos_' + str(time_frame): np.array(DI_pos),
+                           'DI_neg_' + str(time_frame): np.array(DI_neg),
+                           'ADX_' + str(time_frame): np.array(ADX),
+                          })
+    return dict_return
+            
+    
+def EMA(close, param_dict, identifier = None):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}
+    
+    dict_return = {}
+    for time_frame in (param_dict['periods'],):
+        w = np.exp(np.linspace(-1.0, 0, time_frame))
+        w /= w.sum()
+        
+        ema = np.convolve(close, w)[:len(close)]
+        ema[:time_frame] = ema[time_frame]
+        if(identifier):
+            dict_return.update({'EMA_' + identifier + '_' + str(time_frame): ema})
+        else:
+            dict_return.update({'EMA_' + str(time_frame): ema})
+    return dict_return
+
+def OBV(close, volume, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}
+       
+    dict_return = {}
+    OBV = np.zeros(len(close))
+    for i in range(1,len(close)):
+        if(close[i] > close[i-1]):
+            OBV[i] = volume[i] + OBV[i-1]
+        else:
+            OBV[i] = OBV[i-1] - volume[i] 
+    dict_return.update({'OBV': OBV})
+    return dict_return
+
+def STO(close, high, low, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}   
+       
+    dict_return = {}
+    for time_frame in (param_dict['periods'],):
+        buf_K = np.zeros(time_frame)
+        K = []
+        for i in range(len(close)):   
+            buf_K = np.hstack((close[i], buf_K[:-1]))
+            min_k = np.min(buf_K)
+            max_k = np.max(buf_K)
+            diff = max_k - min_k
+            if(diff):
+                K.append(100 * (close[i] - min_k) / (max_k - min_k))
+            else:
+                K.append(100)
+        D = EMA(K,{'periods': 3})
+                
+        dict_return.update({'STO_K_' + str(time_frame): np.array(K),
+                            'STO_D_' + str(time_frame): np.array(D['EMA_3'])})
+    return dict_return
+
+def FRLS(x, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}
+#    
+#    xx = np.zeros(len(x))
+#    tmp = np.array([x[i+1] - x[i] for i in range(len(x)-1)])
+#    xx[1:] = tmp
+    
+    dict_return = {}
+    for ford in (param_dict['periods'],):
+        N = len(x);
+        x1 = np.zeros([ford, 1]);
+        w = np.zeros([ford, 1]);
+    #    err = np.zeros([N0, 1]);
+        lam = 1 - (1/(3*N)) ## 0.9947916666666666   higher values make it converge more at first then diverges
+        lam = 0.99999 ## better but may be unstable
+        lams = 0.992
+    #    lams = 0.7 ## lower values make it converge faster but less
+    
+        supp1 = np.zeros(ford + 1)
+        supp2 = np.zeros(ford + 1)
+        k_p = np.zeros(ford + 1)
+        
+        a, b = np.zeros(ford), np.zeros(ford)
+        k, Eb, errs = 0, 0, 0  ## eb = 1 converges faster but less, Eb = 0 converges more but slower
+        s, tau, Ea = 1 , 0.07, 0.07 ## 0.5>tau > 0, tau = 0.5 converges faster but suboptimal, same with Ea
+        rls_indicator_error = []
+        rls_indicator_output = []
+        for n in range (0, N):
+            if(n < 0):
+                x1 = np.vstack((x[n], x1[0:ford - 1]))
+                rls_indicator_output.append(999)
+                rls_indicator_error.append(999)
+            else:
+                e = x[n] - a.T.dot(x1)
+                tau1 = tau + e ** 2 / Ea
+                
+                
+                supp1[0] = 0
+                supp2[0] = 1
+                supp1[1:] = k
+                supp2[1:] = np.negative(a)
+        
+                if(abs(Ea) != 0):
+                    k_p = supp1.T + (e / Ea) * supp2.T 
+                    
+                Ea = lam * (Ea + e**2 / tau)
+                
+                a = a + k * e / tau 
+                
+                mm = k_p[-1]
+                eb = Eb * mm
+                k = k_p[:-1] + np.multiply(b, mm)
+                tau = tau1 - eb * mm
+                Eb = lam * (Eb + eb**2/tau)
+                b = b - np.multiply(k, eb / tau)
+                
+                x1 = np.vstack((x[n], x1[0:ford - 1]))
+                y = w.T.dot(x1)
+                err = x[n] - y
+                
+                rls_indicator_output.append(y)
+                rls_indicator_error.append(e)
+                if(s):
+                    errs = err / s
+                psi1 = np.tanh(errs)
+                psi2 = 1 / np.cosh(errs)**2
+                if(psi2 >= 0.5):
+                    psi3 = psi2
+                else:
+                    psi3 = 0.5
+                
+                spsi3 = s / psi3
+                w = w + np.multiply((spsi3 / tau) * psi1, k).T
+                
+                s = lams * s + (1 - lams) *spsi3 * abs(psi1)
+                if(s < 0.01):
+                    s = 0.01
+
+
+        dict_return.update({'frls_error_' + str(ford): np.reshape(np.array(rls_indicator_error), len(rls_indicator_error)),
+#                            'frls_output_' + str(ford): np.reshape(np.array(rls_indicator_output), len(rls_indicator_output))
+                            })
+    #        if(lam):
+    #            dict_return.update({
+    #                                'nlms_s_' + str(time_period) + '_' + str(nlms_step) + '_' + str(nlms_constant) + '_' + str(tau): np.array(nlms_smoothed_indicator)
+    #                               })
+#                                             'specify_features':
+#                                             {
+#                                                     'skip': False,
+#                                                     'features':
+#                                                      {
+#                                                              1 : {
+#                                                                   'key': 'Tenkan_sen',
+#                                                                   'value': 9 * 4
+#                                                                   }
+#                                                      }
+#                                             }
+    return dict_return
+
+
+def TRIX(close, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}   
+       
+    dict_return = {}
+    for time_frame in (param_dict['periods'],):
+        single_EMA = EMA(close,{'periods': time_frame})
+        single_EMA = single_EMA['EMA_' + str(time_frame)]
+        double_EMA = EMA(single_EMA,{'periods': time_frame})
+        double_EMA = double_EMA['EMA_' + str(time_frame)]
+        triple_EMA = EMA(double_EMA,{'periods': time_frame})
+        triple_EMA = triple_EMA['EMA_' + str(time_frame)]
+        trix = [(triple_EMA[i] - triple_EMA[i - 1] )/ triple_EMA[i - 1] for i in range(len(triple_EMA))]
+                
+        dict_return.update({
+#                            'single_EMA_' + str(time_frame): single_EMA,
+                            'double_EMA_' + str(time_frame): np.array(double_EMA),
+#                            'triple_EMA' + str(time_frame): triple_EMA,
+                            'trix' + str(time_frame): np.array(trix),
+                            })
+    return dict_return
+
+def my_diff(close, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}   
+    x = close.copy()
+    r1,r0,r11,r00,r111,r000 = 0,0,0,0,0,0
+    lam_a = 0.99
+    c_a= 0.00001
+    dtd1, dtd2, dtd3, aa = [], [], [], []
+    for n in range(len(x)):
+        r1 = lam_a * r1 + (x[n] * x[n-1])
+        r0 = lam_a * r0 + (x[n]**2)
+        a1 = r1/(r0 + c_a)
+           
+        r11 = lam_a * r11 + (x[n-1] * x[n-2])
+        r00 = lam_a * r00 + (x[n-1]**2)
+        a2 = r11/(r00 + c_a)
+           
+        r111 = lam_a * r111 + (x[n-2] * x[n-3])
+        r000 = lam_a * r000 + (x[n-2]**2)
+        a3 = r111/(r000 + c_a)
+        dtd1.append(a1)
+        dtd2.append(a2)
+        dtd3.append(a3)
+        a = max(abs(a1), abs(a2), abs(a3))
+        aa.append(a)
+    
+    diff = np.array(dtd1) - np.array(dtd2)    
+#    diff1 =  np.array(dtd1) - np.array(dtd2)  
+#    diff2 =  np.array(dtd1) - np.array(dtd3)     
+#    diff0 =  diff1 - diff2
+#    diff0[:7] = 0
+    diff[:7] = 0   
+  
+    return {
+            'my_diff':diff,
+#            'my_diff2':diff0,
+#            'my_diff3':aa,
+            }
+    
+def thresholding_algo(y, lag, threshold, influence, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {}   
+    signals = np.zeros(len(y))
+    filteredY = np.array(y)
+    avgFilter = [0]*len(y)
+    stdFilter = [0]*len(y)
+    avgFilter[lag - 1] = np.mean(y[0:lag])
+    stdFilter[lag - 1] = np.std(y[0:lag])
+    for i in range(lag, len(y)):
+        if abs(y[i] - avgFilter[i-1]) > threshold * stdFilter [i-1]:
+            if y[i] > avgFilter[i-1]:
+                signals[i] = 1
+            else:
+                signals[i] = -1
+
+            filteredY[i] = influence * y[i] + (1 - influence) * filteredY[i-1]
+            avgFilter[i] = np.mean(filteredY[(i-lag+1):i+1])
+            stdFilter[i] = np.std(filteredY[(i-lag+1):i+1])
+        else:
+            signals[i] = 0
+            filteredY[i] = y[i]
+            avgFilter[i] = np.mean(filteredY[(i-lag+1):i+1])
+            stdFilter[i] = np.std(filteredY[(i-lag+1):i+1])
+
+    return dict(signals = np.asarray(signals),
+                avgFilter = np.asarray(avgFilter),
+                stdFilter = np.asarray(stdFilter))
+    
+def ohcl_diff(o, c, h, l, param_dict):
+    if('skip' in param_dict):
+        if(param_dict['skip']):
+           return {} 
+    dict_return = {}
+    c_diff, c_o, h_o, l_o, h_l = [], [], [], [], []
+    for i in range(len(o)):
+        c_diff.append((c[i] - c[i-1])/c[i-1])
+        c_o.append((c[i] - o[i])/ o[i])
+        h_o.append((h[i] - o[i])/ o[i])
+        l_o.append((l[i] - o[i])/ o[i])
+        h_l.append((h[i] - l[i])/ l[i])
+    dict_results =  dict(c_diff = np.asarray(c_diff),
+                        c_o = np.asarray(c_o),
+                        h_o = np.asarray(h_o),
+                        l_o = np.asarray(l_o),
+                        h_l = np.asarray(h_l))
+    if(not param_dict['specify_features']['skip']):
+        feat_dict = param_dict['specify_features']['features']
+        for i in feat_dict:
+            dict_return.update({i: dict_results[i]})
+    else:
+        dict_return.update(dict_results)
+
+            
